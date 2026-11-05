@@ -1,0 +1,129 @@
+{#
+templates/includes/task_card.html
+----------------------------------
+Modular reusable component representing an individual Task card inside
+the Kanban board columns.
+
+Features:
+- SortableJS draggable card with data attributes (data-task-id, data-status).
+- Priority color badges (High: red, Medium: amber, Low: green).
+- Overdue highlight in RED (task-overdue class + badge-overdue).
+- Due within 24 hours highlight in AMBER (task-due-soon class + badge-due-soon).
+- Drag handle (⠿) for accessible visual cue.
+- Quick action menu (Edit, Delete, and manual Move buttons for accessibility).
+#}
+
+<div 
+    class="task-card draggable-card priority-{{ task.priority }} {% if task.is_overdue %}task-overdue{% elif task.is_due_soon %}task-due-soon{% endif %}" 
+    id="task-card-{{ task.id }}"
+    data-task-id="{{ task.id }}"
+    data-status="{{ task.status }}"
+    data-priority="{{ task.priority }}"
+    data-important="{{ 'true' if task.important else 'false' }}"
+    data-is-urgent="{{ 'true' if task.is_urgent else 'false' }}"
+    data-quadrant="{{ task.eisenhower_quadrant }}"
+    data-assignee-id="{{ task.assigned_to or '' }}"
+    data-assignee-name="{{ (task.assignee.name if task.assignee else 'Unassigned')|lower }}"
+    data-due-date="{{ task.due_date.isoformat() if task.due_date else '' }}"
+    data-is-overdue="{{ 'true' if task.is_overdue else 'false' }}"
+    data-is-due-soon="{{ 'true' if task.is_due_soon else 'false' }}"
+>
+    <!-- Top Row: Drag Handle, Priority Badge, Important Badge, Due Urgency, and Controls -->
+    <div class="card-top">
+        <div class="card-badges">
+            <span class="drag-handle" title="Drag to move card">⠿</span>
+            
+            <!-- Priority Badge (Red for high, Amber for medium, Green for low) -->
+            <span class="badge badge-priority badge-{{ task.priority }}">
+                <span class="priority-dot priority-dot-{{ task.priority }}"></span>
+                {{ task.priority|capitalize }}
+            </span>
+
+            <!-- Eisenhower Matrix Important Badge -->
+            {% if task.important %}
+                <span class="badge badge-important" title="Important (Eisenhower Matrix)">
+                    ⭐ Important
+                </span>
+            {% endif %}
+
+            <!-- Overdue in RED / Due within 48 hours in AMBER -->
+            {% if task.is_overdue %}
+                <span class="badge badge-urgency badge-overdue" title="Past due date!">
+                    ⏰ Overdue
+                </span>
+            {% elif task.is_due_soon %}
+                <span class="badge badge-urgency badge-due-soon" title="Due within 48 hours!">
+                    ⏳ Due &lt;48h
+                </span>
+            {% endif %}
+        </div>
+
+        <div class="card-controls">
+            <a href="{{ url_for('main.edit_task', task_id=task.id) }}" class="btn-icon" title="Edit Task" aria-label="Edit Task: {{ task.title }}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+            </a>
+            <form method="POST" action="{{ url_for('main.delete_task', task_id=task.id) }}" class="form-delete-task" style="display:inline;" data-task-id="{{ task.id }}" data-task-title="{{ task.title }}">
+                <button type="submit" class="btn-icon btn-icon-delete" title="Delete Task" aria-label="Delete Task: {{ task.title }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Task Title & Description -->
+    <h4 class="task-title">{{ task.title }}</h4>
+
+    {% if task.description %}
+        <p class="task-description">{{ task.description }}</p>
+    {% endif %}
+
+    <!-- Meta Details: Due Date & Assignee -->
+    <div class="task-meta">
+        {% if task.due_date %}
+            <div class="meta-item meta-due {% if task.is_overdue %}meta-overdue text-danger{% elif task.is_due_soon %}meta-due-soon text-warning{% endif %}" title="Target Completion Date">
+                <span>📅</span>
+                <span>{{ task.due_date.strftime('%b %d, %Y') }}</span>
+            </div>
+        {% endif %}
+
+        <div class="meta-item meta-assignee" title="Assignee (click dropdown to change)">
+            <span class="assignee-icon">👤</span>
+            <select class="assignee-quick-select" data-task-id="{{ task.id }}" title="Assign task to any registered user">
+                <option value="" {% if not task.assigned_to %}selected{% endif %}>Unassigned</option>
+                {% for u in users %}
+                    <option value="{{ u.id }}" {% if task.assigned_to == u.id %}selected{% endif %}>
+                        {{ u.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <!-- Bottom Action Bar: Move to Other Statuses (Accessible click fallback) -->
+    <div class="card-status-actions">
+        <span class="status-action-label">Move:</span>
+        <div class="status-btn-group">
+            {% if task.status != 'todo' %}
+                <form method="POST" action="{{ url_for('main.update_status', task_id=task.id) }}" style="display:inline;">
+                    <input type="hidden" name="status" value="todo">
+                    <button type="submit" class="status-shift-btn shift-todo" title="Move to To Do">To Do</button>
+                </form>
+            {% endif %}
+
+            {% if task.status != 'doing' %}
+                <form method="POST" action="{{ url_for('main.update_status', task_id=task.id) }}" style="display:inline;">
+                    <input type="hidden" name="status" value="doing">
+                    <button type="submit" class="status-shift-btn shift-doing" title="Move to Doing">Doing</button>
+                </form>
+            {% endif %}
+
+            {% if task.status != 'done' %}
+                <form method="POST" action="{{ url_for('main.update_status', task_id=task.id) }}" style="display:inline;">
+                    <input type="hidden" name="status" value="done">
+                    <button type="submit" class="status-shift-btn shift-done" title="Mark as Done">Done</button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+
+</div>

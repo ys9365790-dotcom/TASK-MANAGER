@@ -1,0 +1,246 @@
+{#
+templates/base.html
+-------------------
+Base Jinja2 template providing the common HTML skeleton, responsive navigation bar,
+session-aware user profile controls (Login, Signup, Logout), flash notifications,
+and asset links for the TaskManager web application.
+#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}TaskManager - Team Productivity & Task Tracking{% endblock %}</title>
+
+    <!-- Google Fonts: Plus Jakarta Sans for UI and JetBrains Mono for codes/timestamps -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+
+    <!-- Main Stylesheet -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <!-- Immediate Theme Initialization Script to Prevent FOUC -->
+    <script>
+        (function() {
+            try {
+                const savedTheme = localStorage.getItem('taskmanager-theme');
+                const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const theme = savedTheme ? savedTheme : (systemDark ? 'dark' : 'light');
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (e) {}
+        })();
+    </script>
+</head>
+<body>
+
+    <!-- Main Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <!-- Brand Logo & Title -->
+            <a href="{{ url_for('main.index') }}" class="nav-brand">
+                <span class="brand-icon">⚡</span>
+                <span class="brand-text">TaskManager</span>
+            </a>
+
+            <!-- Mobile Hamburger Toggle Button -->
+            <button type="button" class="nav-toggle-btn" id="nav-toggle" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navbar-menu">
+                <span class="nav-toggle-icon" aria-hidden="true">
+                    <span class="nav-toggle-bar"></span>
+                    <span class="nav-toggle-bar"></span>
+                    <span class="nav-toggle-bar"></span>
+                </span>
+            </button>
+
+            <!-- Navigation Links -->
+            <div class="nav-links" id="navbar-menu">
+                {% if current_user.is_authenticated %}
+                    <!-- Links for Authenticated Users -->
+                    <a href="{{ url_for('main.index') }}" class="nav-link {% if request.endpoint == 'main.index' %}active{% endif %}">
+                        <svg class="nav-link-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect width="7" height="9" x="3" y="3" rx="1"/>
+                            <rect width="7" height="5" x="14" y="3" rx="1"/>
+                            <rect width="7" height="9" x="14" y="12" rx="1"/>
+                            <rect width="7" height="5" x="3" y="16" rx="1"/>
+                        </svg>
+                        <span>Board</span>
+                    </a>
+                    <a href="{{ url_for('main.dashboard_view') }}" class="nav-link {% if request.endpoint == 'main.dashboard_view' %}active{% endif %}">
+                        <svg class="nav-link-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="18" x2="18" y1="20" y2="10"/>
+                            <line x1="12" x2="12" y1="20" y2="4"/>
+                            <line x1="6" x2="6" y1="20" y2="14"/>
+                        </svg>
+                        <span>Analytics</span>
+                    </a>
+                    <a href="{{ url_for('main.activity_view') }}" class="nav-link {% if request.endpoint == 'main.activity_view' %}active{% endif %}">
+                        <svg class="nav-link-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                            <path d="M3 3v5h5"/>
+                            <path d="M12 7v5l4 2"/>
+                        </svg>
+                        <span>Activity Log</span>
+                    </a>
+                    <a href="{{ url_for('main.create_task') }}" class="btn btn-primary btn-sm">
+                        <span>+ New Task</span>
+                    </a>
+
+                    <!-- Dark / Light Mode Animated Icon Switch -->
+                    <button type="button" id="theme-toggle" class="theme-toggle-btn" role="switch" aria-checked="false" aria-label="Toggle dark/light mode" title="Toggle dark/light mode">
+                        <span class="theme-toggle-track" aria-hidden="true">
+                            <span class="theme-icon-wrapper theme-icon-sun">
+                                <svg class="theme-icon-svg" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="4"/>
+                                    <path d="M12 2v2"/><path d="M12 20v2"/>
+                                    <path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/>
+                                    <path d="M2 12h2"/><path d="M20 12h2"/>
+                                    <path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
+                                </svg>
+                            </span>
+                            <span class="theme-icon-wrapper theme-icon-moon">
+                                <svg class="theme-icon-svg" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+                                </svg>
+                            </span>
+                            <span class="theme-toggle-thumb"></span>
+                        </span>
+                    </button>
+
+                    <!-- User Profile & Logout -->
+                    <div class="nav-user-menu">
+                        <span class="user-pill" title="Signed in as {{ current_user.email }}">
+                            <span class="avatar-circle">{{ current_user.name[:2]|upper }}</span>
+                            <span class="nav-user-name">{{ current_user.name }}</span>
+                        </span>
+                        <a href="{{ url_for('main.logout') }}" class="btn btn-outline btn-sm btn-logout" title="Sign out of your account">
+                            <span>Log Out</span>
+                        </a>
+                    </div>
+                {% else %}
+                    <!-- Links for Logged-Out Guests -->
+                    <a href="{{ url_for('main.seed_demo_data') }}" class="btn btn-outline btn-sm" title="Seed sample demo data">
+                        <span>🌱 Seed Demo Data</span>
+                    </a>
+                    <a href="{{ url_for('main.login') }}" class="nav-link {% if request.endpoint == 'main.login' %}active{% endif %}">
+                        <svg class="nav-link-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                            <polyline points="10 17 15 12 10 7"/>
+                            <line x1="15" x2="3" y1="12" y2="12"/>
+                        </svg>
+                        <span>Log In</span>
+                    </a>
+                    <a href="{{ url_for('main.signup') }}" class="btn btn-primary btn-sm">
+                        <span>Sign Up</span>
+                    </a>
+
+                    <!-- Dark / Light Mode Animated Icon Switch for Guests -->
+                    <button type="button" id="theme-toggle" class="theme-toggle-btn" role="switch" aria-checked="false" aria-label="Toggle dark/light mode" title="Toggle dark/light mode">
+                        <span class="theme-toggle-track" aria-hidden="true">
+                            <span class="theme-icon-wrapper theme-icon-sun">
+                                <svg class="theme-icon-svg" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="4"/>
+                                    <path d="M12 2v2"/><path d="M12 20v2"/>
+                                    <path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/>
+                                    <path d="M2 12h2"/><path d="M20 12h2"/>
+                                    <path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
+                                </svg>
+                            </span>
+                            <span class="theme-icon-wrapper theme-icon-moon">
+                                <svg class="theme-icon-svg" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+                                </svg>
+                            </span>
+                            <span class="theme-toggle-thumb"></span>
+                        </span>
+                    </button>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- Flash Message Container for User Notifications -->
+    <div class="flash-container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        <span class="alert-icon">
+                            {% if category == 'success' %}✓
+                            {% elif category in ['danger', 'error'] %}✕
+                            {% elif category == 'warning' %}⚠
+                            {% else %}ℹ{% endif %}
+                        </span>
+                        <span class="alert-message">{{ message }}</span>
+                        <button class="alert-close" onclick="this.parentElement.remove()">&times;</button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <!-- Main Page Content Block (Overridden by child templates) -->
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Global Animated Delete Confirmation Modal -->
+    <div id="delete-task-modal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modal-task-title">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-icon-badge modal-icon-danger">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M3 6h18"/>
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                            <line x1="10" x2="10" y1="11" y2="17"/>
+                            <line x1="14" x2="14" y1="11" y2="17"/>
+                        </svg>
+                    </div>
+                    <button type="button" class="modal-close-btn" id="modal-delete-close" aria-label="Close dialog">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <h3 id="modal-task-title" class="modal-title">Delete Task?</h3>
+                    <p class="modal-description">
+                        Are you sure you want to permanently delete <strong id="modal-task-name">this task</strong>? This action cannot be undone and will be permanently recorded in the activity log.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" id="modal-delete-cancel">Cancel</button>
+                    <form id="modal-delete-form" method="POST" action="" style="display:inline; margin:0;">
+                        <button type="submit" class="btn btn-danger" id="modal-delete-confirm">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M3 6h18"/>
+                                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                            </svg>
+                            <span>Delete Task</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <p><strong>TaskManager</strong> &bull; Built with Flask, Flask-Login &amp; SQLAlchemy (SQLite)</p>
+            <p class="text-muted">Featuring User, Task, and ActivityLog models with complete authentication &amp; audit trails.</p>
+        </div>
+    </footer>
+
+    <!-- Chart.js: Modern Data Visualizations -->
+    <script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
+
+    <!-- SortableJS: Enables drag-and-drop Kanban column functionality -->
+    <script src="{{ url_for('static', filename='js/sortable.min.js') }}"></script>
+
+    <!-- Client-side Interactive JavaScript -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

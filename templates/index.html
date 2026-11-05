@@ -1,0 +1,350 @@
+{#
+templates/index.html
+--------------------
+The primary dashboard view for TaskManager.
+Features:
+1. Metric cards summarizing task counts (Total, Todo, Doing, Done, Overdue, Due Soon).
+2. Filter bar (Search by title/desc, filter by assigned user, filter by priority).
+3. Three-column Kanban Board (To Do, Doing, Done) powered by SortableJS drag-and-drop:
+   - Status updates asynchronously saved via `PATCH /api/tasks/<id>` on card drop.
+   - Priority badges (High: red, Medium: amber, Low: green).
+   - Overdue tasks highlighted with red border and red urgency badge.
+   - Tasks due within 24 hours highlighted with amber border and amber urgency badge.
+4. Recent activity log stream in the sidebar.
+#}
+
+{% extends "base.html" %}
+
+{% block title %}Dashboard &bull; TaskManager{% endblock %}
+
+{% block content %}
+<div class="dashboard-wrapper">
+
+    <!-- Top Metrics Overview -->
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="metric-icon metric-total">📁</div>
+            <div class="metric-info">
+                <span class="metric-label">Total Tasks</span>
+                <span class="metric-value" id="metric-total-count">{{ metrics.total }}</span>
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-icon metric-todo">📝</div>
+            <div class="metric-info">
+                <span class="metric-label">To Do</span>
+                <span class="metric-value" id="metric-todo-count">{{ metrics.todo }}</span>
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-icon metric-doing">⚡</div>
+            <div class="metric-info">
+                <span class="metric-label">Doing</span>
+                <span class="metric-value" id="metric-doing-count">{{ metrics.doing }}</span>
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-icon metric-done">✅</div>
+            <div class="metric-info">
+                <span class="metric-label">Done</span>
+                <span class="metric-value" id="metric-done-count">{{ metrics.done }}</span>
+            </div>
+        </div>
+
+        <!-- Overdue Warning Metric (Highlighted in RED) -->
+        <div class="metric-card metric-card-danger" id="metric-card-overdue" title="Tasks past their target deadline" {% if metrics.overdue == 0 %}style="display:none;"{% endif %}>
+            <div class="metric-icon metric-overdue">⏰</div>
+            <div class="metric-info">
+                <span class="metric-label">Overdue</span>
+                <span class="metric-value" id="metric-overdue-count">{{ metrics.overdue }}</span>
+            </div>
+        </div>
+
+        <!-- Due Within 48 Hours Warning Metric (Highlighted in AMBER) -->
+        <div class="metric-card metric-card-warning" id="metric-card-due-soon" title="Tasks due within the next 48 hours" {% if metrics.due_soon == 0 %}style="display:none;"{% endif %}>
+            <div class="metric-icon metric-due-soon">⏳</div>
+            <div class="metric-info">
+                <span class="metric-label">Due &lt;48h</span>
+                <span class="metric-value" id="metric-due-soon-count">{{ metrics.due_soon }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter and Search Toolbar + Board View Mode Toggle (Client-Side) -->
+    <div class="toolbar-card">
+        <div class="filter-toolbar">
+            <div class="search-input-group">
+                <span class="search-icon">🔍</span>
+                <input 
+                    type="text" 
+                    id="search-input" 
+                    placeholder="Search tasks by title, description, or assignee..." 
+                    class="form-control"
+                    autocomplete="off"
+                >
+                <button type="button" id="search-clear-btn" class="search-clear-btn" style="display: none;" title="Clear search text">&times;</button>
+            </div>
+
+            <div class="filter-selects">
+                <!-- Priority Filter Dropdown -->
+                <div class="filter-group">
+                    <label for="filter-priority" class="filter-label">Priority:</label>
+                    <select id="filter-priority" class="form-select filter-select">
+                        <option value="">All Priorities</option>
+                        <option value="high">🔴 High</option>
+                        <option value="medium">🟡 Medium</option>
+                        <option value="low">🟢 Low</option>
+                    </select>
+                </div>
+
+                <!-- Assignee Filter Dropdown -->
+                <div class="filter-group">
+                    <label for="filter-assignee" class="filter-label">Assignee:</label>
+                    <select id="filter-assignee" class="form-select filter-select">
+                        <option value="">All Assignees</option>
+                        <option value="unassigned">👤 Unassigned</option>
+                        {% for u in users %}
+                            <option value="{{ u.id }}">
+                                👤 {{ u.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Board View Mode Switcher: Kanban vs 2x2 Eisenhower Matrix -->
+                <div class="view-mode-toggle-group">
+                    <div class="view-toggle-btn-group" role="group" aria-label="Board layout toggle">
+                        <button type="button" id="toggle-view-kanban" class="view-mode-btn active" title="Switch to 3-Column Kanban Board (To Do / Doing / Done)">
+                            <span class="view-btn-icon">📋</span>
+                            <span class="view-btn-text">Kanban</span>
+                        </button>
+                        <button type="button" id="toggle-view-matrix" class="view-mode-btn" title="Switch to 2x2 Eisenhower Matrix (Urgent / Important)">
+                            <span class="view-btn-icon">🎯</span>
+                            <span class="view-btn-text">Eisenhower Matrix</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Instant Reset / Clear Filters Button -->
+                <button type="button" id="btn-clear-filters" class="btn btn-outline btn-sm btn-clear-filters" style="display: none;" title="Reset all filters">
+                    <span>✕ Clear Filters</span>
+                </button>
+
+                <!-- Filter Result Information Badge -->
+                <span id="filter-result-info" class="badge badge-filter-info" style="display: none;"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Layout: Board Views + Recent Activity Sidebar -->
+    <div class="board-layout">
+
+        <div class="board-main-area">
+
+            <!-- VIEW 1: 3-Column SortableJS Kanban Board (To Do / Doing / Done) -->
+            <div class="kanban-board" id="kanban-board-view">
+
+                <!-- COLUMN 1: TO DO -->
+                <div class="kanban-column" id="col-todo" data-status="todo">
+                    <div class="column-header">
+                        <div class="column-title">
+                            <span class="status-indicator status-indicator-todo"></span>
+                            <h3>To Do</h3>
+                        </div>
+                        <span class="task-badge count-pill" id="count-todo">{{ todo_tasks|length }}</span>
+                    </div>
+
+                    <div class="task-list sortable-list" id="list-todo" data-status="todo">
+                        {% for task in todo_tasks %}
+                            {% include "includes/task_card.html" %}
+                        {% endfor %}
+                        <div class="empty-state" id="empty-todo" {% if todo_tasks %}style="display:none;"{% endif %}>
+                            <div class="empty-icon">☕</div>
+                            <p class="empty-title">All caught up!</p>
+                            <span class="empty-subtitle">No tasks to do right now</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- COLUMN 2: DOING -->
+                <div class="kanban-column" id="col-doing" data-status="doing">
+                    <div class="column-header">
+                        <div class="column-title">
+                            <span class="status-indicator status-indicator-doing"></span>
+                            <h3>Doing</h3>
+                        </div>
+                        <span class="task-badge count-pill" id="count-doing">{{ doing_tasks|length }}</span>
+                    </div>
+
+                    <div class="task-list sortable-list" id="list-doing" data-status="doing">
+                        {% for task in doing_tasks %}
+                            {% include "includes/task_card.html" %}
+                        {% endfor %}
+                        <div class="empty-state" id="empty-doing" {% if doing_tasks %}style="display:none;"{% endif %}>
+                            <div class="empty-icon">⚡</div>
+                            <p class="empty-title">Nothing in progress</p>
+                            <span class="empty-subtitle">Drag a task here to start working</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- COLUMN 3: DONE -->
+                <div class="kanban-column" id="col-done" data-status="done">
+                    <div class="column-header">
+                        <div class="column-title">
+                            <span class="status-indicator status-indicator-done"></span>
+                            <h3>Done</h3>
+                        </div>
+                        <span class="task-badge count-pill" id="count-done">{{ done_tasks|length }}</span>
+                    </div>
+
+                    <div class="task-list sortable-list" id="list-done" data-status="done">
+                        {% for task in done_tasks %}
+                            {% include "includes/task_card.html" %}
+                        {% endfor %}
+                        <div class="empty-state" id="empty-done" {% if done_tasks %}style="display:none;"{% endif %}>
+                            <div class="empty-icon">🎉</div>
+                            <p class="empty-title">No completed tasks yet</p>
+                            <span class="empty-subtitle">Drag finished tasks here to celebrate</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- VIEW 2: 2x2 SortableJS Eisenhower Matrix Board (Urgent / Important) -->
+            <div class="matrix-board" id="matrix-board-view" style="display: none;">
+
+                <!-- Eisenhower Guide Banner -->
+                <div class="matrix-banner">
+                    <div class="matrix-banner-info">
+                        <h4>🎯 2x2 Eisenhower Decision Matrix</h4>
+                        <p class="text-muted">Prioritize tasks by <strong>Urgency</strong> (due &le; 48 hours) and <strong>Importance</strong>. Drag and drop cards across quadrants to reclassify.</p>
+                    </div>
+                    <div class="matrix-axes-tags">
+                        <span class="axis-pill axis-urgent">⚡ Urgent: Due &le; 48h</span>
+                        <span class="axis-pill axis-important">⭐ Important</span>
+                    </div>
+                </div>
+
+                <!-- 2x2 Quadrant Grid -->
+                <div class="matrix-grid">
+
+                    <!-- QUADRANT 1: URGENT & IMPORTANT (DO FIRST) -->
+                    <div class="matrix-quadrant quadrant-q1" id="col-q1" data-quadrant="q1" data-urgent="true" data-important="true">
+                        <div class="quadrant-header">
+                            <div class="quadrant-title-group">
+                                <span class="quadrant-badge-pill pill-q1">Q1</span>
+                                <div class="quadrant-titles">
+                                    <h3>Do First</h3>
+                                    <span class="quadrant-tagline">Urgent &amp; Important &bull; Immediate Action</span>
+                                </div>
+                            </div>
+                            <span class="task-badge badge-q1" id="count-q1">{{ q1_tasks|length }}</span>
+                        </div>
+                        <div class="task-list sortable-list matrix-sortable-list" id="list-q1" data-quadrant="q1" data-urgent="true" data-important="true">
+                            <div class="empty-state" id="empty-q1">
+                                <p>No urgent &amp; important tasks</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- QUADRANT 2: NOT URGENT & IMPORTANT (SCHEDULE / PLAN) -->
+                    <div class="matrix-quadrant quadrant-q2" id="col-q2" data-quadrant="q2" data-urgent="false" data-important="true">
+                        <div class="quadrant-header">
+                            <div class="quadrant-title-group">
+                                <span class="quadrant-badge-pill pill-q2">Q2</span>
+                                <div class="quadrant-titles">
+                                    <h3>Schedule</h3>
+                                    <span class="quadrant-tagline">Not Urgent &amp; Important &bull; Strategic Focus</span>
+                                </div>
+                            </div>
+                            <span class="task-badge badge-q2" id="count-q2">{{ q2_tasks|length }}</span>
+                        </div>
+                        <div class="task-list sortable-list matrix-sortable-list" id="list-q2" data-quadrant="q2" data-urgent="false" data-important="true">
+                            <div class="empty-state" id="empty-q2">
+                                <p>No scheduled important tasks</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- QUADRANT 3: URGENT & NOT IMPORTANT (DELEGATE) -->
+                    <div class="matrix-quadrant quadrant-q3" id="col-q3" data-quadrant="q3" data-urgent="true" data-important="false">
+                        <div class="quadrant-header">
+                            <div class="quadrant-title-group">
+                                <span class="quadrant-badge-pill pill-q3">Q3</span>
+                                <div class="quadrant-titles">
+                                    <h3>Delegate</h3>
+                                    <span class="quadrant-tagline">Urgent &amp; Not Important &bull; Immediate Requests</span>
+                                </div>
+                            </div>
+                            <span class="task-badge badge-q3" id="count-q3">{{ q3_tasks|length }}</span>
+                        </div>
+                        <div class="task-list sortable-list matrix-sortable-list" id="list-q3" data-quadrant="q3" data-urgent="true" data-important="false">
+                            <div class="empty-state" id="empty-q3">
+                                <p>No delegated tasks</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- QUADRANT 4: NOT URGENT & NOT IMPORTANT (DON'T DO / ELIMINATE) -->
+                    <div class="matrix-quadrant quadrant-q4" id="col-q4" data-quadrant="q4" data-urgent="false" data-important="false">
+                        <div class="quadrant-header">
+                            <div class="quadrant-title-group">
+                                <span class="quadrant-badge-pill pill-q4">Q4</span>
+                                <div class="quadrant-titles">
+                                    <h3>Don't Do</h3>
+                                    <span class="quadrant-tagline">Not Urgent &amp; Not Important &bull; Minimize / Drop</span>
+                                </div>
+                            </div>
+                            <span class="task-badge badge-q4" id="count-q4">{{ q4_tasks|length }}</span>
+                        </div>
+                        <div class="task-list sortable-list matrix-sortable-list" id="list-q4" data-quadrant="q4" data-urgent="false" data-important="false">
+                            <div class="empty-state" id="empty-q4">
+                                <p>No low-priority tasks</p>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- Sidebar: Recent Activity Audit Stream -->
+        <aside class="activity-sidebar">
+            <div class="sidebar-header">
+                <h3>⚡ Recent Activity</h3>
+                <a href="{{ url_for('main.activity_view') }}" class="view-all-link">View all &rarr;</a>
+            </div>
+
+            <div class="activity-timeline" id="recent-activity-list">
+                {% for log in recent_activity %}
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <p class="timeline-action">{{ log.action }}</p>
+                            <span class="timeline-time">{{ log.timestamp.strftime('%b %d, %H:%M') }}</span>
+                        </div>
+                    </div>
+                {% else %}
+                    <p class="text-muted" style="font-size: 0.875rem;">No recent activity logs recorded yet.</p>
+                {% endfor %}
+            </div>
+
+            <div class="sidebar-footer">
+                <a href="{{ url_for('main.create_task') }}" class="btn btn-primary btn-block">+ Add Task</a>
+            </div>
+        </aside>
+
+    </div>
+
+</div>
+
+<!-- Real-time Toast Notification Container for SortableJS Drops -->
+<div id="toast-container" class="toast-container"></div>
+{% endblock %}

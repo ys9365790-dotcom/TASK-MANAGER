@@ -1,0 +1,769 @@
+{#
+templates/dashboard.html
+------------------------
+Visual analytics and metrics dashboard powered by Chart.js.
+Visualizes:
+1. Tasks per status (Doughnut Chart with completion statistics).
+2. Tasks per team member (Bar Chart with workload distribution).
+3. Priority breakdown & team allocation table.
+All chart data is loaded dynamically from the `/api/analytics` JSON endpoint.
+Automatically reacts to Dark/Light mode theme changes in real time.
+#}
+
+{% extends "base.html" %}
+
+{% block title %}Analytics & Productivity Dashboard &bull; TaskManager{% endblock %}
+
+{% block content %}
+<div class="analytics-wrapper">
+
+    <!-- Dashboard Header -->
+    <div class="analytics-header">
+        <div class="header-titles">
+            <div class="header-badge">📈 Live Insights</div>
+            <h2>Productivity &amp; Team Analytics</h2>
+            <p class="text-muted">Interactive visual metrics and workload distribution powered by Chart.js and REST APIs.</p>
+        </div>
+
+        <div class="header-actions">
+            <button type="button" id="refresh-analytics-btn" class="btn btn-outline btn-sm" title="Reload chart data">
+                <span class="refresh-icon">↻</span> Refresh Data
+            </button>
+            <a href="{{ url_for('main.index') }}" class="btn btn-secondary btn-sm">
+                📊 Board View
+            </a>
+            <a href="{{ url_for('main.create_task') }}" class="btn btn-primary btn-sm">
+                + New Task
+            </a>
+        </div>
+    </div>
+
+    <!-- Summary Metrics Cards Grid -->
+    <div class="metrics-grid analytics-metrics">
+        <div class="metric-card">
+            <div class="metric-icon metric-total">📁</div>
+            <div class="metric-info">
+                <span class="metric-label">Total Tasks</span>
+                <span class="metric-value" id="stat-total-tasks">-</span>
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-icon metric-done">🎯</div>
+            <div class="metric-info">
+                <span class="metric-label">Completion Rate</span>
+                <span class="metric-value" id="stat-completion-rate">-</span>
+                <div class="completion-progress-track">
+                    <div id="stat-progress-bar" class="completion-progress-fill" style="width: 0%;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-icon metric-doing">⚡</div>
+            <div class="metric-info">
+                <span class="metric-label">In Progress (Doing)</span>
+                <span class="metric-value" id="stat-doing-tasks">-</span>
+            </div>
+        </div>
+
+        <div class="metric-card metric-card-danger" id="stat-card-overdue">
+            <div class="metric-icon metric-overdue">⏰</div>
+            <div class="metric-info">
+                <span class="metric-label">Overdue</span>
+                <span class="metric-value" id="stat-overdue-tasks">-</span>
+            </div>
+        </div>
+
+        <div class="metric-card metric-card-warning" id="stat-card-due-soon">
+            <div class="metric-icon metric-due-soon">⏳</div>
+            <div class="metric-info">
+                <span class="metric-label">Due &lt;48h</span>
+                <span class="metric-value" id="stat-due-soon-tasks">-</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Grid (Doughnut & Bar Charts) -->
+    <div class="charts-grid">
+
+        <!-- Chart 1: Tasks per Status (Doughnut) -->
+        <div class="chart-card">
+            <div class="chart-card-header">
+                <div class="chart-title">
+                    <h3>🍩 Tasks by Workflow Status</h3>
+                    <p class="text-muted">Proportion of tasks across To Do, Doing, and Done columns.</p>
+                </div>
+                <span class="chart-pill">Doughnut</span>
+            </div>
+
+            <div class="chart-canvas-container doughnut-container">
+                <canvas id="statusDoughnutChart"></canvas>
+            </div>
+
+            <div class="chart-breakdown-legend" id="status-legend-breakdown">
+                <!-- Injected via JavaScript from JSON endpoint -->
+            </div>
+        </div>
+
+        <!-- Chart 2: Tasks per Member (Bar Chart) -->
+        <div class="chart-card">
+            <div class="chart-card-header">
+                <div class="chart-title">
+                    <h3>📊 Workload per Team Member</h3>
+                    <p class="text-muted">Total number of active and completed tasks assigned to each user.</p>
+                </div>
+                <span class="chart-pill">Bar Chart</span>
+            </div>
+
+            <div class="chart-canvas-container bar-container">
+                <canvas id="memberBarChart"></canvas>
+            </div>
+
+            <div class="chart-footer-note">
+                <span class="text-muted">💡 Tip: Reassign tasks dynamically on the Board view to balance team workloads.</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Secondary Charts & Member Table Grid -->
+    <div class="dashboard-details-grid">
+
+        <!-- Chart 3: Priority Breakdown -->
+        <div class="chart-card col-priority">
+            <div class="chart-card-header">
+                <div class="chart-title">
+                    <h3>🎯 Priority Allocation</h3>
+                    <p class="text-muted">High vs Medium vs Low urgency distribution.</p>
+                </div>
+            </div>
+
+            <div class="chart-canvas-container doughnut-small-container">
+                <canvas id="priorityDoughnutChart"></canvas>
+            </div>
+
+            <div class="chart-breakdown-legend" id="priority-legend-breakdown">
+                <!-- Injected via JavaScript -->
+            </div>
+        </div>
+
+        <!-- Table: Team Member Workload Summary -->
+        <div class="chart-card col-table">
+            <div class="chart-card-header">
+                <div class="chart-title">
+                    <h3>👥 Team Member Breakdown</h3>
+                    <p class="text-muted">Granular task allocation and progress per registered member.</p>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="audit-table member-table">
+                    <thead>
+                        <tr>
+                            <th>Member</th>
+                            <th>Total Tasks</th>
+                            <th>To Do</th>
+                            <th>Doing</th>
+                            <th>Done</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="member-table-body">
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">Loading team statistics...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/**
+ * Interactive Chart.js Visualizations for TaskManager Dashboard:
+ * 1. Tasks per status (Doughnut chart with soft status gradients/accents)
+ * 2. Tasks per member (Bar chart with rounded bars and soft linear gradients)
+ * 3. Priority breakdown (Doughnut chart with harmonious priority palette)
+ * 4. Custom tooltips, no heavy gridlines, and easeOutQuart animation
+ * 5. Full dynamic theme awareness updating chart colors on dark/light toggle
+ */
+document.addEventListener('DOMContentLoaded', () => {
+    let statusChart = null;
+    let memberChart = null;
+    let priorityChart = null;
+
+    let cachedStatusDist = null;
+    let cachedMemberDist = null;
+    let cachedPriorityDist = null;
+    let cachedSummary = null;
+
+    /**
+     * Helper to read current theme colors for Chart.js typography and grid lines.
+     */
+    function getThemeStyles() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        return {
+            isDark,
+            textColor: isDark ? '#f3f4f6' : '#0f172a',
+            textMuted: isDark ? '#9ca3af' : '#64748b',
+            gridColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+            surfaceBg: isDark ? '#111827' : '#ffffff',
+            borderColor: isDark ? '#1f2937' : '#e2e8f0'
+        };
+    }
+
+    /**
+     * Status colors tailored for dark and light theme
+     */
+    function getStatusColors(isDark) {
+        return isDark
+            ? ['#60a5fa', '#a78bfa', '#34d399']  // To Do, Doing, Done
+            : ['#3b82f6', '#8b5cf6', '#10b981'];
+    }
+
+    /**
+     * Priority colors tailored for dark and light theme
+     */
+    function getPriorityColors(isDark) {
+        return isDark
+            ? ['#f87171', '#fbbf24', '#34d399']  // High, Medium, Low
+            : ['#ef4444', '#f59e0b', '#10b981'];
+    }
+
+    /**
+     * Creates soft linear gradient fills for member bar chart
+     */
+    function createBarGradients(canvas, isDark, count) {
+        const ctx = canvas.getContext('2d');
+        const palette = [
+            { r: 99, g: 102, b: 241 },   // Indigo
+            { r: 6, g: 182, b: 212 },    // Cyan
+            { r: 16, g: 185, b: 129 },   // Emerald
+            { r: 245, g: 158, b: 11 },   // Amber
+            { r: 236, g: 72, b: 153 },   // Pink
+            { r: 139, g: 92, b: 246 },   // Violet
+            { r: 59, g: 130, b: 246 },   // Blue
+            { r: 148, g: 163, b: 184 }   // Slate
+        ];
+
+        const gradients = [];
+        const borders = [];
+
+        for (let i = 0; i < count; i++) {
+            const c = palette[i % palette.length];
+            const grad = ctx.createLinearGradient(0, 0, 0, 280);
+            if (isDark) {
+                grad.addColorStop(0, `rgba(${c.r}, ${c.g}, ${c.b}, 0.85)`);
+                grad.addColorStop(1, `rgba(${c.r}, ${c.g}, ${c.b}, 0.20)`);
+                borders.push(`rgba(${c.r}, ${c.g}, ${c.b}, 0.95)`);
+            } else {
+                grad.addColorStop(0, `rgba(${c.r}, ${c.g}, ${c.b}, 0.82)`);
+                grad.addColorStop(1, `rgba(${c.r}, ${c.g}, ${c.b}, 0.20)`);
+                borders.push(`rgba(${c.r}, ${c.g}, ${c.b}, 0.90)`);
+            }
+            gradients.push(grad);
+        }
+        return { gradients, borders };
+    }
+
+    /**
+     * Shared custom tooltip design matching current theme
+     */
+    function getCustomTooltipConfig(theme) {
+        return {
+            enabled: true,
+            backgroundColor: theme.isDark ? 'rgba(17, 24, 39, 0.94)' : 'rgba(15, 23, 42, 0.92)',
+            titleColor: '#ffffff',
+            bodyColor: theme.isDark ? '#e5e7eb' : '#f8fafc',
+            borderColor: theme.isDark ? 'rgba(75, 85, 99, 0.45)' : 'rgba(255, 255, 255, 0.15)',
+            borderWidth: 1,
+            padding: 12,
+            cornerRadius: 10,
+            boxPadding: 6,
+            usePointStyle: true,
+            titleFont: {
+                family: "'Plus Jakarta Sans', sans-serif",
+                size: 13,
+                weight: '700'
+            },
+            bodyFont: {
+                family: "'Plus Jakarta Sans', sans-serif",
+                size: 12,
+                weight: '500'
+            }
+        };
+    }
+
+    /**
+     * Fetches analytics data from Flask JSON endpoint (/api/analytics)
+     * and renders or updates all charts.
+     */
+    async function fetchAndRenderAnalytics() {
+        const refreshBtn = document.getElementById('refresh-analytics-btn');
+        if (refreshBtn) refreshBtn.classList.add('loading');
+
+        try {
+            const response = await fetch('/api/analytics', {
+                headers: { 'Accept': 'application/json' }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to load analytics.');
+            }
+
+            cachedStatusDist = data.status_distribution;
+            cachedMemberDist = data.member_distribution;
+            cachedPriorityDist = data.priority_distribution;
+            cachedSummary = data.summary;
+
+            renderSummaryMetrics(data.summary);
+            renderStatusDoughnut(data.status_distribution, data.summary);
+            renderMemberBarChart(data.member_distribution);
+            renderPriorityDoughnut(data.priority_distribution, data.summary);
+            renderMemberTable(data.member_distribution.members);
+
+        } catch (err) {
+            console.error('Analytics load failure:', err);
+            if (typeof showToast === 'function') {
+                showToast(`Analytics Error: ${err.message}`, 'error');
+            }
+        } finally {
+            if (refreshBtn) refreshBtn.classList.remove('loading');
+        }
+    }
+
+    /**
+     * Updates top KPI metric cards with count-up animation (~800ms) and completion bar.
+     */
+    function renderSummaryMetrics(summary) {
+        if (!summary) return;
+
+        const totalEl = document.getElementById('stat-total-tasks');
+        const compEl = document.getElementById('stat-completion-rate');
+        const doingEl = document.getElementById('stat-doing-tasks');
+        const overdueEl = document.getElementById('stat-overdue-tasks');
+        const dueSoonEl = document.getElementById('stat-due-soon-tasks');
+
+        if (typeof window.animateCountUp === 'function') {
+            window.animateCountUp(totalEl, summary.total, 800);
+            window.animateCountUp(compEl, summary.completion_rate, 800, '%');
+            window.animateCountUp(doingEl, summary.doing, 800);
+            window.animateCountUp(overdueEl, summary.overdue, 800);
+            window.animateCountUp(dueSoonEl, summary.due_soon, 800);
+        } else {
+            if (totalEl) totalEl.textContent = summary.total;
+            if (compEl) compEl.textContent = `${summary.completion_rate}%`;
+            if (doingEl) doingEl.textContent = summary.doing;
+            if (overdueEl) overdueEl.textContent = summary.overdue;
+            if (dueSoonEl) dueSoonEl.textContent = summary.due_soon;
+        }
+
+        const progressBar = document.getElementById('stat-progress-bar');
+        if (progressBar) {
+            progressBar.style.width = `${summary.completion_rate}%`;
+        }
+    }
+
+    /**
+     * Chart 1: Tasks per Status (Doughnut Chart)
+     */
+    function renderStatusDoughnut(dist, summary) {
+        const ctx = document.getElementById('statusDoughnutChart');
+        if (!ctx || typeof Chart === 'undefined') return;
+
+        const theme = getThemeStyles();
+        const colors = getStatusColors(theme.isDark);
+
+        if (statusChart) {
+            statusChart.data.labels = dist.labels;
+            statusChart.data.datasets[0].data = dist.counts;
+            statusChart.data.datasets[0].backgroundColor = colors;
+            statusChart.data.datasets[0].borderColor = theme.surfaceBg;
+            statusChart.options.plugins.legend.labels.color = theme.textColor;
+            Object.assign(statusChart.options.plugins.tooltip, getCustomTooltipConfig(theme));
+            statusChart.update();
+        } else {
+            statusChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: dist.labels,
+                    datasets: [{
+                        data: dist.counts,
+                        backgroundColor: colors,
+                        borderColor: theme.surfaceBg,
+                        borderWidth: 3,
+                        hoverOffset: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    animation: {
+                        duration: 800,
+                        easing: 'easeOutQuart'
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'bottom',
+                            labels: {
+                                color: theme.textColor,
+                                padding: 16,
+                                font: {
+                                    family: "'Plus Jakarta Sans', sans-serif",
+                                    size: 12,
+                                    weight: 600
+                                },
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        },
+                        tooltip: {
+                            ...getCustomTooltipConfig(theme),
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.raw || 0;
+                                    const total = (summary && summary.total) || 1;
+                                    const pct = Math.round((value / total) * 100);
+                                    return ` ${context.label}: ${value} task${value === 1 ? '' : 's'} (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        renderStatusLegend(dist, summary, colors);
+    }
+
+    function renderStatusLegend(dist, summary, colors) {
+        const legendContainer = document.getElementById('status-legend-breakdown');
+        if (legendContainer && dist) {
+            legendContainer.innerHTML = dist.labels.map((label, i) => {
+                const count = dist.counts[i] || 0;
+                const color = colors ? colors[i] : dist.colors[i];
+                const pct = (summary && summary.total > 0) ? Math.round((count / summary.total) * 100) : 0;
+                return `
+                    <div class="legend-stat-pill">
+                        <span class="legend-stat-dot" style="background-color: ${color};"></span>
+                        <span class="legend-stat-name">${label}</span>
+                        <strong class="legend-stat-val">${count} <span class="text-muted">(${pct}%)</span></strong>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    /**
+     * Chart 2: Tasks per Member (Bar Chart with rounded bars and soft gradient fills)
+     */
+    function renderMemberBarChart(dist) {
+        const ctx = document.getElementById('memberBarChart');
+        if (!ctx || typeof Chart === 'undefined') return;
+
+        const theme = getThemeStyles();
+        const { gradients, borders } = createBarGradients(ctx, theme.isDark, dist.labels.length);
+
+        if (memberChart) {
+            memberChart.data.labels = dist.labels;
+            memberChart.data.datasets[0].data = dist.counts;
+            memberChart.data.datasets[0].backgroundColor = gradients;
+            memberChart.data.datasets[0].borderColor = borders;
+            memberChart.options.scales.x.ticks.color = theme.textMuted;
+            memberChart.options.scales.y.ticks.color = theme.textMuted;
+            memberChart.options.scales.y.grid.color = theme.gridColor;
+            Object.assign(memberChart.options.plugins.tooltip, getCustomTooltipConfig(theme));
+            memberChart.update();
+        } else {
+            memberChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dist.labels,
+                    datasets: [{
+                        label: 'Tasks Assigned',
+                        data: dist.counts,
+                        backgroundColor: gradients,
+                        borderColor: borders,
+                        borderWidth: 1.5,
+                        borderRadius: 10,
+                        borderSkipped: false,
+                        maxBarThickness: 48
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 800,
+                        easing: 'easeOutQuart'
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            ...getCustomTooltipConfig(theme),
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.raw || 0;
+                                    return ` Tasks assigned: ${value}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false,
+                                drawBorder: false,
+                                drawOnChartArea: false
+                            },
+                            border: {
+                                display: false
+                            },
+                            ticks: {
+                                color: theme.textMuted,
+                                padding: 8,
+                                font: {
+                                    family: "'Plus Jakarta Sans', sans-serif",
+                                    size: 11,
+                                    weight: 600
+                                }
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: theme.gridColor,
+                                drawBorder: false,
+                                lineWidth: 1
+                            },
+                            border: {
+                                display: false
+                            },
+                            ticks: {
+                                precision: 0,
+                                color: theme.textMuted,
+                                padding: 8,
+                                font: {
+                                    family: "'Plus Jakarta Sans', sans-serif",
+                                    size: 11
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    /**
+     * Chart 3: Priority Breakdown (Doughnut Chart)
+     */
+    function renderPriorityDoughnut(dist, summary) {
+        const ctx = document.getElementById('priorityDoughnutChart');
+        if (!ctx || typeof Chart === 'undefined') return;
+
+        const theme = getThemeStyles();
+        const colors = getPriorityColors(theme.isDark);
+
+        if (priorityChart) {
+            priorityChart.data.labels = dist.labels;
+            priorityChart.data.datasets[0].data = dist.counts;
+            priorityChart.data.datasets[0].backgroundColor = colors;
+            priorityChart.data.datasets[0].borderColor = theme.surfaceBg;
+            priorityChart.options.plugins.legend.labels.color = theme.textColor;
+            Object.assign(priorityChart.options.plugins.tooltip, getCustomTooltipConfig(theme));
+            priorityChart.update();
+        } else {
+            priorityChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: dist.labels,
+                    datasets: [{
+                        data: dist.counts,
+                        backgroundColor: colors,
+                        borderColor: theme.surfaceBg,
+                        borderWidth: 2,
+                        hoverOffset: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '64%',
+                    animation: {
+                        duration: 800,
+                        easing: 'easeOutQuart'
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                color: theme.textColor,
+                                boxWidth: 12,
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                                font: {
+                                    family: "'Plus Jakarta Sans', sans-serif",
+                                    size: 11,
+                                    weight: 600
+                                }
+                            }
+                        },
+                        tooltip: {
+                            ...getCustomTooltipConfig(theme),
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.raw || 0;
+                                    const total = (summary && summary.total) || 1;
+                                    const pct = Math.round((value / total) * 100);
+                                    return ` ${context.label}: ${value} task${value === 1 ? '' : 's'} (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        renderPriorityLegend(dist, colors);
+    }
+
+    function renderPriorityLegend(dist, colors) {
+        const legendContainer = document.getElementById('priority-legend-breakdown');
+        if (legendContainer && dist) {
+            legendContainer.innerHTML = dist.labels.map((label, i) => {
+                const count = dist.counts[i] || 0;
+                const color = colors ? colors[i] : dist.colors[i];
+                return `
+                    <div class="legend-stat-pill">
+                        <span class="legend-stat-dot" style="background-color: ${color};"></span>
+                        <span class="legend-stat-name">${label} Priority</span>
+                        <strong class="legend-stat-val">${count}</strong>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    /**
+     * Workload Table per Team Member
+     */
+    function renderMemberTable(members) {
+        const tbody = document.getElementById('member-table-body');
+        if (!tbody || !members) return;
+
+        if (members.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">No team member records available.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = members.map(m => {
+            const initials = m.name ? m.name.substring(0, 2).toUpperCase() : '??';
+            const loadClass = m.total > 4 ? 'badge-high' : m.total > 0 ? 'badge-medium' : 'badge-low';
+            const loadText = m.total > 4 ? 'Heavy Load' : m.total > 0 ? 'Active' : 'Available';
+
+            return `
+                <tr>
+                    <td>
+                        <div class="member-cell">
+                            <span class="avatar-circle avatar-sm">${initials}</span>
+                            <div class="member-name-group">
+                                <strong>${m.name}</strong>
+                                ${m.email ? `<small class="text-muted">${m.email}</small>` : ''}
+                            </div>
+                        </div>
+                    </td>
+                    <td><strong class="text-main">${m.total}</strong></td>
+                    <td><span class="badge badge-sm badge-todo">${m.todo}</span></td>
+                    <td><span class="badge badge-sm badge-doing">${m.doing}</span></td>
+                    <td><span class="badge badge-sm badge-done">${m.done}</span></td>
+                    <td><span class="badge ${loadClass}">${loadText}</span></td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Updates chart styling and color palettes when dark/light mode toggles.
+     */
+    function handleThemeChange() {
+        const theme = getThemeStyles();
+        const tooltipConfig = getCustomTooltipConfig(theme);
+
+        if (statusChart && cachedStatusDist) {
+            const statusColors = getStatusColors(theme.isDark);
+            statusChart.data.datasets[0].borderColor = theme.surfaceBg;
+            statusChart.data.datasets[0].backgroundColor = statusColors;
+            statusChart.options.plugins.legend.labels.color = theme.textColor;
+            Object.assign(statusChart.options.plugins.tooltip, tooltipConfig);
+            statusChart.update();
+            renderStatusLegend(cachedStatusDist, cachedSummary, statusColors);
+        }
+
+        if (memberChart && cachedMemberDist) {
+            const barCanvas = document.getElementById('memberBarChart');
+            if (barCanvas) {
+                const { gradients, borders } = createBarGradients(barCanvas, theme.isDark, cachedMemberDist.labels.length);
+                memberChart.data.datasets[0].backgroundColor = gradients;
+                memberChart.data.datasets[0].borderColor = borders;
+            }
+            memberChart.options.scales.x.ticks.color = theme.textMuted;
+            memberChart.options.scales.y.ticks.color = theme.textMuted;
+            memberChart.options.scales.y.grid.color = theme.gridColor;
+            Object.assign(memberChart.options.plugins.tooltip, tooltipConfig);
+            memberChart.update();
+        }
+
+        if (priorityChart && cachedPriorityDist) {
+            const priorityColors = getPriorityColors(theme.isDark);
+            priorityChart.data.datasets[0].borderColor = theme.surfaceBg;
+            priorityChart.data.datasets[0].backgroundColor = priorityColors;
+            priorityChart.options.plugins.legend.labels.color = theme.textColor;
+            Object.assign(priorityChart.options.plugins.tooltip, tooltipConfig);
+            priorityChart.update();
+            renderPriorityLegend(cachedPriorityDist, priorityColors);
+        }
+    }
+
+    // Refresh button event listener
+    const refreshBtn = document.getElementById('refresh-analytics-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            fetchAndRenderAnalytics();
+            if (typeof showToast === 'function') {
+                showToast('Analytics data refreshed!', 'info');
+            }
+        });
+    }
+
+    // React in real time when Dark/Light theme changes via custom event or attribute mutation
+    window.addEventListener('themeChanged', handleThemeChange);
+
+    const themeObserver = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.attributeName === 'data-theme') {
+                handleThemeChange();
+                break;
+            }
+        }
+    });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    // Initial load
+    fetchAndRenderAnalytics();
+});
+</script>
+{% endblock %}

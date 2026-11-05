@@ -1,0 +1,9 @@
+# requirements.txt
+# This file lists the Python package dependencies for the TaskManager Flask application.
+# Install all dependencies using: pip install -r requirements.txt
+
+Flask>=3.0.0          # The core Flask web framework
+Flask-SQLAlchemy>=3.1.0 # SQLAlchemy integration for Flask to manage SQLite database
+Flask-Login>=0.6.3    # User session management, login, logout, and protected routes
+Werkzeug>=3.0.0       # WSGI utility library, used here for secure password hashing
+python-dotenv>=1.0.0  # Loads environment variables from a .env file (optional)

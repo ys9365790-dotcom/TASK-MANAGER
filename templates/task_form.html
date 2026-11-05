@@ -1,0 +1,220 @@
+{#
+templates/task_form.html
+------------------------
+Unified form template for both Creating a new Task and Editing an existing Task.
+Displays all model fields:
+- title: Required text field
+- description: Multiline text area
+- status: Select dropdown ('todo', 'doing', 'done')
+- priority: Select dropdown ('low', 'medium', 'high')
+- due_date: HTML5 date picker
+- assigned_to: Dropdown populated with registered User records
+- created_by: User attribution (for creation)
+#}
+
+{% extends "base.html" %}
+
+{% block title %}
+    {% if action == 'create' %}Create New Task{% else %}Edit Task: {{ task.title }}{% endif %} &bull; TaskManager
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+
+    <div class="form-card">
+            <!-- Form Header -->
+        <div class="form-header">
+            <a href="{{ url_for('main.index') }}" class="back-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                <span>Back to Task Board</span>
+            </a>
+            <h2>{% if action == 'create' %}Create New Task{% else %}Edit Task #{{ task.id }}{% endif %}</h2>
+            <p class="text-muted">
+                {% if action == 'create' %}
+                    Add a new task to your team's workflow board. Fill in details and priority below.
+                {% else %}
+                    Modify details and keep the team updated with automatic activity audit logging.
+                {% endif %}
+            </p>
+        </div>
+
+        <!-- Form Body -->
+        <form method="POST" action="{% if action == 'create' %}{{ url_for('main.create_task') }}{% else %}{{ url_for('main.edit_task', task_id=task.id) }}{% endif %}" class="task-form">
+
+            <!-- Title Field -->
+            <div class="form-group">
+                <label for="title" class="form-label">
+                    <span>Task Title <span class="text-danger">*</span></span>
+                    <span class="label-badge">Required</span>
+                </label>
+                <input 
+                    type="text" 
+                    id="title" 
+                    name="title" 
+                    class="form-control" 
+                    placeholder="e.g. Design Landing Page Mockups" 
+                    value="{{ task.title if task else '' }}" 
+                    required
+                    autofocus
+                >
+                <span class="form-hint">Brief, descriptive title summarizing the objective of this task.</span>
+            </div>
+
+            <!-- Description Field -->
+            <div class="form-group">
+                <label for="description" class="form-label">Description</label>
+                <textarea 
+                    id="description" 
+                    name="description" 
+                    rows="4" 
+                    class="form-control" 
+                    placeholder="Provide additional context, acceptance criteria, or references..."
+                >{{ task.description if task else '' }}</textarea>
+                <span class="form-hint">Optional context or requirements to guide the task execution.</span>
+            </div>
+
+            <!-- Status and Priority Grid -->
+            <div class="form-row form-row-workflow">
+                <!-- Status Selection -->
+                <div class="form-group col-half">
+                    <label for="status" class="form-label">Status</label>
+                    <div class="select-wrapper">
+                        <select id="status" name="status" class="form-select">
+                            <option value="todo" {% if task and task.status == 'todo' %}selected{% endif %}>To Do</option>
+                            <option value="doing" {% if task and task.status == 'doing' %}selected{% endif %}>In Progress (Doing)</option>
+                            <option value="done" {% if task and task.status == 'done' %}selected{% endif %}>Completed (Done)</option>
+                        </select>
+                    </div>
+                    <span class="form-hint">Current stage in the Kanban workflow.</span>
+                </div>
+
+                <!-- Priority Selection: Colored Chip Buttons -->
+                <div class="form-group col-half">
+                    <label class="form-label" id="priority-label">Priority</label>
+                    <div class="priority-chips-group" role="radiogroup" aria-labelledby="priority-label">
+                        <!-- Low Priority Chip -->
+                        <label class="priority-chip priority-chip-low" title="Low Priority">
+                            <input 
+                                type="radio" 
+                                name="priority" 
+                                value="low" 
+                                {% if task and task.priority == 'low' %}checked{% endif %}
+                            >
+                            <span class="chip-content">
+                                <span class="chip-dot"></span>
+                                <span class="chip-label">Low</span>
+                            </span>
+                        </label>
+
+                        <!-- Medium Priority Chip -->
+                        <label class="priority-chip priority-chip-medium" title="Medium Priority">
+                            <input 
+                                type="radio" 
+                                name="priority" 
+                                value="medium" 
+                                {% if not task or task.priority == 'medium' %}checked{% endif %}
+                            >
+                            <span class="chip-content">
+                                <span class="chip-dot"></span>
+                                <span class="chip-label">Medium</span>
+                            </span>
+                        </label>
+
+                        <!-- High Priority Chip -->
+                        <label class="priority-chip priority-chip-high" title="High Priority">
+                            <input 
+                                type="radio" 
+                                name="priority" 
+                                value="high" 
+                                {% if task and task.priority == 'high' %}checked{% endif %}
+                            >
+                            <span class="chip-content">
+                                <span class="chip-dot"></span>
+                                <span class="chip-label">High</span>
+                            </span>
+                        </label>
+                    </div>
+                    <span class="form-hint">Severity level used for sorting and visual badges.</span>
+                </div>
+            </div>
+
+            <!-- Due Date and Assignee Grid -->
+            <div class="form-row form-row-schedule">
+                <!-- Due Date Picker -->
+                <div class="form-group col-half">
+                    <label for="due_date" class="form-label">Due Date</label>
+                    <input 
+                        type="date" 
+                        id="due_date" 
+                        name="due_date" 
+                        class="form-control" 
+                        value="{% if task and task.due_date %}{{ task.due_date.isoformat() if task.due_date.isoformat is defined else task.due_date }}{% endif %}"
+                    >
+                    <span class="form-hint">Tasks due within 48h receive an urgency banner.</span>
+                </div>
+
+                <!-- Assignee Dropdown -->
+                <div class="form-group col-half">
+                    <label for="assigned_to" class="form-label">Assignee</label>
+                    <div class="select-wrapper">
+                        <select id="assigned_to" name="assigned_to" class="form-select">
+                            <option value="">Unassigned</option>
+                            {% for u in users %}
+                                <option value="{{ u.id }}" {% if task and task.assigned_to == u.id %}selected{% endif %}>
+                                    {{ u.name }} ({{ u.email }})
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <span class="form-hint">Team member responsible for delivery.</span>
+                </div>
+            </div>
+
+            <!-- Eisenhower Matrix Importance Checkbox -->
+            <div class="form-group form-check-group-styled">
+                <label class="checkbox-container">
+                    <input 
+                        type="checkbox" 
+                        id="important" 
+                        name="important" 
+                        value="1" 
+                        {% if task and task.important %}checked{% endif %}
+                    >
+                    <span class="checkbox-label">
+                        <strong>⭐ Mark as Important (Eisenhower Matrix)</strong>
+                        <small class="form-hint">Important tasks appear in the top quadrants of the 2x2 Matrix. Urgent classification is calculated from the Due Date.</small>
+                    </span>
+                </label>
+            </div>
+
+            <!-- Author Attribution (Automatic to current_user) -->
+            <div class="form-group form-group-author">
+                <label class="form-label">Task Author</label>
+                <div class="user-pill author-pill">
+                    <span class="avatar-circle">{% if action == 'create' %}{{ current_user.name[:2]|upper }}{% else %}{{ task.creator.name[:2]|upper if task.creator else '??' }}{% endif %}</span>
+                    <span>{% if action == 'create' %}{{ current_user.name }} (You){% else %}{{ task.creator.name if task.creator else 'Unknown' }}{% endif %}</span>
+                </div>
+                <span class="form-hint">{% if action == 'create' %}Automatically attributed to your active session.{% else %}Original creator of this task.{% endif %}</span>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="form-actions">
+                {% if action == 'edit' %}
+                    <button type="button" class="btn btn-outline btn-danger-text btn-delete-task-trigger" data-task-id="{{ task.id }}" data-task-title="{{ task.title }}" data-delete-url="{{ url_for('main.delete_task', task_id=task.id) }}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                        <span>Delete Task</span>
+                    </button>
+                {% endif %}
+                <div class="form-actions-right">
+                    <a href="{{ url_for('main.index') }}" class="btn btn-outline">Cancel</a>
+                    <button type="submit" class="btn btn-primary">
+                        {% if action == 'create' %}Create Task{% else %}Save Changes{% endif %}
+                    </button>
+                </div>
+            </div>
+
+        </form>
+    </div>
+
+</div>
+{% endblock %}

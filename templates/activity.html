@@ -1,0 +1,95 @@
+{#
+templates/activity.html
+-----------------------
+Dedicated page presenting the comprehensive audit history of all actions performed
+in the TaskManager system.
+Queries the ActivityLog model, joining related User and Task records.
+#}
+
+{% extends "base.html" %}
+
+{% block title %}Activity Audit Trail &bull; TaskManager{% endblock %}
+
+{% block content %}
+<div class="activity-container">
+
+    <!-- Activity Header -->
+    <div class="page-header">
+        <div class="header-titles">
+            <a href="{{ url_for('main.index') }}" class="back-link">&larr; Back to Dashboard</a>
+            <h2>📜 System Activity Audit Log</h2>
+            <p class="text-muted">A complete chronological trail of tasks created, updated, status transitions, and deletions.</p>
+        </div>
+        <div class="header-actions">
+            <a href="{{ url_for('main.create_task') }}" class="btn btn-primary">+ New Task</a>
+        </div>
+    </div>
+
+    <!-- Activity Table Card -->
+    <div class="table-card">
+        <div class="table-responsive">
+            <table class="activity-table">
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">Log ID</th>
+                        <th style="width: 180px;">Timestamp (UTC)</th>
+                        <th style="width: 180px;">User</th>
+                        <th>Action Description</th>
+                        <th style="width: 220px;">Associated Task</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                        <tr>
+                            <!-- Log ID -->
+                            <td class="log-id">#{{ log.id }}</td>
+
+                            <!-- Formatted Timestamp -->
+                            <td class="log-timestamp">
+                                <code>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</code>
+                            </td>
+
+                            <!-- Performing User -->
+                            <td class="log-user">
+                                {% if log.user %}
+                                    <div class="user-pill">
+                                        <span class="avatar-circle">{{ log.user.name[:2]|upper }}</span>
+                                        <span>{{ log.user.name }}</span>
+                                    </div>
+                                {% else %}
+                                    <span class="text-muted">System / Deleted</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- Action Summary -->
+                            <td class="log-action">
+                                <strong>{{ log.action }}</strong>
+                            </td>
+
+                            <!-- Task Reference -->
+                            <td class="log-task">
+                                {% if log.task %}
+                                    <a href="{{ url_for('main.edit_task', task_id=log.task.id) }}" class="task-link">
+                                        {{ log.task.title }}
+                                    </a>
+                                {% elif log.task_id %}
+                                    <span class="text-muted">Task #{{ log.task_id }} (Deleted)</span>
+                                {% else %}
+                                    <span class="text-muted">&mdash;</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td colspan="5" class="empty-table">
+                                <p>No activity logs recorded yet. Start interacting with tasks to build the audit history!</p>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
