@@ -21,7 +21,6 @@ from app.models import User, Task
 # Create the application instance using the factory function in app/__init__.py
 app = create_app()
 
-
 import sys
 
 def initialize_database(force_reset=False):
@@ -40,6 +39,13 @@ def initialize_database(force_reset=False):
             with app.test_request_context('/seed-demo-data' + ('?reset=1' if force_reset else '')):
                 seed_demo_data()
             print(">> Database successfully initialized and seeded with 10 sample tasks!")
+
+
+# Ensure database tables and initial demo data are ready when started via Gunicorn or direct execution
+try:
+    initialize_database(force_reset=False)
+except Exception as e:
+    print(f">> Startup database check notice: {e}")
 
 
 if __name__ == '__main__':
