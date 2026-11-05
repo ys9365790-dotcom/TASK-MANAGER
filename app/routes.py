@@ -23,7 +23,7 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from app import db
-from app.models import User, Task, ActivityLog
+from app.models import User, Task, ActivityLog, TaskChange, record_task_change
 
 # Define the main Blueprint
 main_bp = Blueprint('main', __name__)
@@ -358,11 +358,18 @@ def create_task():
             db.session.add(task)
             db.session.commit()
 
-            # Record creation activity
+            # Record creation activity & TaskChange
             log_activity(
                 action=f"{current_user.name} created task '{task.title}'",
                 task_id=task.id,
                 user_id=current_user.id
+            )
+            record_task_change(
+                task=task,
+                action='added',
+                user_name=current_user.name,
+                user_id=current_user.id,
+                details='added this'
             )
 
             flash(f"Task '{task.title}' created successfully!", 'success')
@@ -422,6 +429,13 @@ def quick_add_task():
             action=f"Quick-Add: {current_user.name} created task '{new_task.title}'",
             task_id=new_task.id,
             user_id=current_user.id
+        )
+        record_task_change(
+            task=new_task,
+            action='added',
+            user_name=current_user.name,
+            user_id=current_user.id,
+            details='added this'
         )
         flash(f"Task '{new_task.title}' created successfully!", 'success')
     except Exception as e:
@@ -520,6 +534,13 @@ def edit_task(task_id: int):
                 task_id=task.id,
                 user_id=current_user.id
             )
+            record_task_change(
+                task=task,
+                action='edited',
+                user_name=current_user.name,
+                user_id=current_user.id,
+                details='edited this'
+            )
 
             flash(f"Task '{task.title}' updated successfully!", 'success')
             return redirect(url_for('main.index'))
@@ -582,6 +603,13 @@ def update_status(task_id: int):
             task_id=task.id,
             user_id=current_user.id
         )
+        record_task_change(
+            task=task,
+            action='moved',
+            user_name=current_user.name,
+            user_id=current_user.id,
+            details=f"moved this to {new_status.capitalize()}"
+        )
 
         if request.is_json:
             return jsonify({
@@ -629,6 +657,13 @@ def delete_task(task_id: int):
             action=f"{current_user.name} deleted task '{title}'",
             task_id=None,
             user_id=current_user.id
+        )
+        record_task_change(
+            task=task,
+            action='deleted',
+            user_name=current_user.name,
+            user_id=current_user.id,
+            details='deleted this'
         )
 
         flash(f"Task '{title}' was deleted successfully.", 'warning')

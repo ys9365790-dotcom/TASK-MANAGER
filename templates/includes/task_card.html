@@ -75,6 +75,12 @@ Features:
         </div>
     </div>
 
+    <!-- Live User Action Avatar Badge (e.g. "Ravi moved this") -->
+    <div class="card-live-avatar-badge" id="card-live-badge-{{ task.id }}" style="display: none;">
+        <span class="live-avatar-initial" id="card-live-avatar-{{ task.id }}">R</span>
+        <span class="live-avatar-msg" id="card-live-msg-{{ task.id }}">Ravi moved this</span>
+    </div>
+
     <!-- Task Title & Description -->
     <h4 class="task-title">{{ task.title }}</h4>
 

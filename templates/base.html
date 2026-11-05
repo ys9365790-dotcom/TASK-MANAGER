@@ -33,6 +33,8 @@ and asset links for the TaskManager web application.
                 document.documentElement.setAttribute('data-theme', theme);
             } catch (e) {}
         })();
+        window.currentUserId = {{ current_user.id if current_user.is_authenticated else 'null' }};
+        window.currentUserName = "{{ (current_user.name if current_user.is_authenticated else '')|e }}";
     </script>
 </head>
 <body>

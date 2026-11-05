@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
     initQuickAddBar();
     initFocusTimer();
+    initLiveBoardSync();
     initSortableKanban();
     initSortableMatrix();
     initViewModeToggle();
@@ -1928,6 +1929,306 @@ function initFocusTimer() {
         }
     });
 }
+
+/**
+ * Real-Time Multi-User Board Sync:
+ * - Polls /api/changes?since=<timestamp> every 3 seconds (lightweight, no websockets)
+ * - Updates task moves, edits, creations, and deletions live without page refresh
+ * - Animates the changed card with a glowing pulse effect
+ * - Displays small "Ravi moved this" / "Ravi edited this" avatar badges on updated cards
+ */
+function initLiveBoardSync() {
+    const kanbanBoard = document.getElementById('kanban-board-view');
+    const matrixBoard = document.getElementById('matrix-board-view');
+    if (!kanbanBoard && !matrixBoard) return; // Only run on board views
+
+    let lastTimestamp = new Date().toISOString();
+    let isPolling = false;
+
+    // Helper to display the live action avatar badge ("Ravi moved this")
+    function showLiveAvatarBadge(card, initials, message) {
+        if (!card) return;
+
+        let badge = card.querySelector('.card-live-avatar-badge');
+        if (!badge) {
+            badge = document.createElement('div');
+            badge.className = 'card-live-avatar-badge';
+            badge.innerHTML = `
+                <span class="live-avatar-initial">${initials || '?'}</span>
+                <span class="live-avatar-msg">${message}</span>
+            `;
+            const titleEl = card.querySelector('.task-title');
+            if (titleEl && titleEl.parentNode) {
+                titleEl.parentNode.insertBefore(badge, titleEl);
+            } else {
+                card.prepend(badge);
+            }
+        } else {
+            const initialEl = badge.querySelector('.live-avatar-initial');
+            const msgEl = badge.querySelector('.live-avatar-msg');
+            if (initialEl) initialEl.textContent = initials || '?';
+            if (msgEl) msgEl.textContent = message;
+            badge.style.display = 'inline-flex';
+        }
+
+        // Animate the card
+        animateChangedCard(card);
+    }
+
+    function animateChangedCard(card) {
+        if (!card) return;
+        card.classList.remove('card-live-pulse');
+        // Force DOM reflow to restart CSS animation cleanly
+        void card.offsetWidth;
+        card.classList.add('card-live-pulse');
+
+        setTimeout(() => {
+            card.classList.remove('card-live-pulse');
+        }, 2200);
+    }
+
+    // Helper to dynamically build or clone a card for newly created tasks
+    function createNewCardElement(task) {
+        const anyCard = document.querySelector('.task-card');
+        if (anyCard) {
+            const clone = anyCard.cloneNode(true);
+            clone.id = `task-card-${task.id}`;
+            clone.dataset.taskId = task.id;
+            clone.dataset.status = task.status || 'todo';
+            clone.dataset.priority = task.priority || 'medium';
+            clone.dataset.important = task.important ? 'true' : 'false';
+            clone.dataset.isUrgent = task.is_urgent ? 'true' : 'false';
+            clone.dataset.quadrant = task.eisenhower_quadrant || 'q4';
+            clone.dataset.assigneeId = task.assigned_to || '';
+            clone.dataset.assigneeName = (task.assignee_name || 'unassigned').toLowerCase();
+
+            // Set classes
+            clone.className = `task-card draggable-card priority-${task.priority || 'medium'}`;
+            if (task.is_overdue) clone.classList.add('task-overdue');
+            else if (task.is_due_soon) clone.classList.add('task-due-soon');
+
+            // Title & description
+            const titleEl = clone.querySelector('.task-title');
+            if (titleEl) titleEl.textContent = task.title;
+
+            let descEl = clone.querySelector('.task-description');
+            if (task.description) {
+                if (!descEl) {
+                    descEl = document.createElement('p');
+                    descEl.className = 'task-description';
+                    if (titleEl && titleEl.nextSibling) {
+                        titleEl.parentNode.insertBefore(descEl, titleEl.nextSibling);
+                    }
+                }
+                descEl.textContent = task.description;
+            } else if (descEl) {
+                descEl.remove();
+            }
+
+            // Priority badge
+            const prioBadge = clone.querySelector('.badge-priority');
+            if (prioBadge) {
+                prioBadge.className = `badge badge-priority badge-${task.priority}`;
+                const prioDot = prioBadge.querySelector('.priority-dot');
+                if (prioDot) prioDot.className = `priority-dot priority-dot-${task.priority}`;
+                const prioText = prioBadge.lastChild;
+                if (prioText) prioText.textContent = ` ${(task.priority || 'medium').charAt(0).toUpperCase() + (task.priority || 'medium').slice(1)}`;
+            }
+
+            // Important badge
+            let impBadge = clone.querySelector('.badge-important');
+            if (task.important) {
+                if (!impBadge) {
+                    impBadge = document.createElement('span');
+                    impBadge.className = 'badge badge-important';
+                    impBadge.title = 'Important (Eisenhower Matrix)';
+                    impBadge.textContent = '⭐ Important';
+                    const badgesWrap = clone.querySelector('.card-badges');
+                    if (badgesWrap) badgesWrap.appendChild(impBadge);
+                }
+            } else if (impBadge) {
+                impBadge.remove();
+            }
+
+            // Time spent badge
+            const timeBadge = clone.querySelector('.badge-time-spent');
+            if (timeBadge) {
+                timeBadge.id = `task-time-spent-${task.id}`;
+                if (task.total_focus_minutes > 0) {
+                    const timeVal = timeBadge.querySelector('.time-spent-val');
+                    if (timeVal) timeVal.textContent = task.formatted_focus_time || `${task.total_focus_minutes}m`;
+                    timeBadge.style.display = 'inline-flex';
+                } else {
+                    timeBadge.style.display = 'none';
+                }
+            }
+
+            // Update edit & delete links
+            const editLink = clone.querySelector('.card-controls a.btn-icon');
+            if (editLink) editLink.href = `/tasks/${task.id}/edit`;
+
+            const delForm = clone.querySelector('.form-delete-task');
+            if (delForm) {
+                delForm.action = `/tasks/${task.id}/delete`;
+                delForm.dataset.taskId = task.id;
+                delForm.dataset.taskTitle = task.title;
+            }
+
+            // Focus button
+            const focusBtn = clone.querySelector('.btn-start-focus');
+            if (focusBtn) {
+                focusBtn.dataset.taskId = task.id;
+                focusBtn.dataset.taskTitle = task.title;
+            }
+
+            // Assignee dropdown
+            const selectEl = clone.querySelector('.assignee-quick-select');
+            if (selectEl) {
+                selectEl.dataset.taskId = task.id;
+                selectEl.value = task.assigned_to || '';
+            }
+
+            return clone;
+        }
+        return null;
+    }
+
+    async function pollChanges() {
+        if (isPolling) return;
+        if (document.hidden) return; // Save bandwidth when tab is backgrounded
+
+        isPolling = true;
+        try {
+            const url = `/api/changes?since=${encodeURIComponent(lastTimestamp)}`;
+            const response = await fetch(url, {
+                headers: { 'Accept': 'application/json' }
+            });
+
+            if (!response.ok) {
+                isPolling = false;
+                return;
+            }
+
+            const data = await response.json();
+            if (data.server_time) {
+                lastTimestamp = data.server_time;
+            }
+
+            if (data.success && Array.isArray(data.changes) && data.changes.length > 0) {
+                let metricsNeedUpdate = false;
+
+                data.changes.forEach((change) => {
+                    const taskId = change.task_id;
+                    const action = change.action;
+                    const userName = change.user_name || 'Someone';
+                    const initials = change.user_initials || userName.charAt(0).toUpperCase();
+                    const task = change.task;
+
+                    let existingCard = document.getElementById(`task-card-${taskId}`);
+
+                    if (action === 'deleted') {
+                        if (existingCard) {
+                            existingCard.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                            existingCard.style.opacity = '0';
+                            existingCard.style.transform = 'scale(0.92)';
+                            setTimeout(() => {
+                                existingCard.remove();
+                                updateColumnMetrics();
+                            }, 300);
+                            metricsNeedUpdate = true;
+                        }
+                    } else if (action === 'moved') {
+                        if (existingCard && task) {
+                            const newStatus = task.status;
+                            const targetColList = document.getElementById(`list-${newStatus}`);
+
+                            if (targetColList && existingCard.parentNode !== targetColList) {
+                                targetColList.prepend(existingCard);
+                                existingCard.dataset.status = newStatus;
+                                metricsNeedUpdate = true;
+                            }
+
+                            // Show "Ravi moved this" avatar badge and animate
+                            const message = `${userName} moved this`;
+                            showLiveAvatarBadge(existingCard, initials, message);
+                        }
+                    } else if (action === 'edited') {
+                        if (existingCard && task) {
+                            // Update title
+                            const titleEl = existingCard.querySelector('.task-title');
+                            if (titleEl) titleEl.textContent = task.title;
+
+                            // Update priority
+                            existingCard.dataset.priority = task.priority;
+                            const prioBadge = existingCard.querySelector('.badge-priority');
+                            if (prioBadge) {
+                                prioBadge.className = `badge badge-priority badge-${task.priority}`;
+                                const prioDot = prioBadge.querySelector('.priority-dot');
+                                if (prioDot) prioDot.className = `priority-dot priority-dot-${task.priority}`;
+                                const prioText = prioBadge.lastChild;
+                                if (prioText) prioText.textContent = ` ${task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}`;
+                            }
+
+                            // Update important
+                            existingCard.dataset.important = task.important ? 'true' : 'false';
+                            let impBadge = existingCard.querySelector('.badge-important');
+                            if (task.important) {
+                                if (!impBadge) {
+                                    impBadge = document.createElement('span');
+                                    impBadge.className = 'badge badge-important';
+                                    impBadge.title = 'Important (Eisenhower Matrix)';
+                                    impBadge.textContent = '⭐ Important';
+                                    const badgesWrap = existingCard.querySelector('.card-badges');
+                                    if (badgesWrap) badgesWrap.appendChild(impBadge);
+                                }
+                            } else if (impBadge) {
+                                impBadge.remove();
+                            }
+
+                            // Update assignee
+                            if (task.assigned_to) {
+                                existingCard.dataset.assigneeId = task.assigned_to;
+                                existingCard.dataset.assigneeName = (task.assignee_name || '').toLowerCase();
+                                const selectEl = existingCard.querySelector('.assignee-quick-select');
+                                if (selectEl) selectEl.value = task.assigned_to;
+                            }
+
+                            // Show "Ravi edited this" avatar badge and animate
+                            const message = `${userName} edited this`;
+                            showLiveAvatarBadge(existingCard, initials, message);
+                            metricsNeedUpdate = true;
+                        }
+                    } else if (action === 'added') {
+                        if (!existingCard && task) {
+                            const newCard = createNewCardElement(task);
+                            if (newCard) {
+                                const targetColList = document.getElementById(`list-${task.status || 'todo'}`);
+                                if (targetColList) {
+                                    targetColList.prepend(newCard);
+                                    const message = `${userName} added this`;
+                                    showLiveAvatarBadge(newCard, initials, message);
+                                    metricsNeedUpdate = true;
+                                }
+                            }
+                        }
+                    }
+                });
+
+                if (metricsNeedUpdate && typeof updateColumnMetrics === 'function') {
+                    updateColumnMetrics();
+                }
+            }
+        } catch (err) {
+            console.warn('Live sync poll error:', err);
+        } finally {
+            isPolling = false;
+        }
+    }
+
+    // Start 3-second polling interval (no websockets, lightweight HTTP)
+    setInterval(pollChanges, 3000);
+}
+
 
 
 

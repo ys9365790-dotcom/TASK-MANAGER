@@ -20,7 +20,7 @@ from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify
 from flask_login import current_user
 from app import db
-from app.models import Task, User, ActivityLog, TimeLog
+from app.models import Task, User, ActivityLog, TimeLog, TaskChange, record_task_change
 
 # Define the REST API Blueprint with URL prefix '/api'
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -217,13 +217,20 @@ def api_create_task():
         db.session.add(task)
         db.session.commit()
 
-        # 11. Record ActivityLog
+        # 11. Record ActivityLog & TaskChange
         user_record = User.query.get(acting_user_id)
         user_label = user_record.name if user_record else f"User #{acting_user_id}"
         log_api_activity(
             action=f"API: {user_label} created task '{task.title}'",
             task_id=task.id,
             user_id=acting_user_id
+        )
+        record_task_change(
+            task=task,
+            action='added',
+            user_name=user_label,
+            user_id=acting_user_id,
+            details='added this'
         )
 
         return jsonify({
@@ -543,6 +550,22 @@ def api_update_task(task_id: int):
             user_id=acting_user_id
         )
 
+        action_type = 'moved' if ('status' in payload or 'quadrant' in payload) else 'edited'
+        if 'status' in payload:
+            action_details = f"moved this to {task.status.capitalize()}"
+        elif 'quadrant' in payload:
+            action_details = f"moved this to {payload.get('quadrant', '').upper()}"
+        else:
+            action_details = "edited this"
+
+        record_task_change(
+            task=task,
+            action=action_type,
+            user_name=user_label,
+            user_id=acting_user_id,
+            details=action_details
+        )
+
         return jsonify({
             'success': True,
             'message': 'Task updated successfully.',
@@ -591,11 +614,18 @@ def api_delete_task(task_id: int):
         db.session.delete(task)
         db.session.commit()
 
-        # Log deletion in ActivityLog
+        # Log deletion in ActivityLog & TaskChange
         log_api_activity(
             action=f"API: {user_label} deleted task '{task_title}' (ID {task_id})",
             task_id=None,
             user_id=acting_user_id
+        )
+        record_task_change(
+            task=task,
+            action='deleted',
+            user_name=user_label,
+            user_id=acting_user_id,
+            details='deleted this'
         )
 
         return jsonify({
@@ -921,6 +951,13 @@ def api_quick_add_task():
             task_id=new_task.id,
             user_id=acting_user_id
         )
+        record_task_change(
+            task=new_task,
+            action='added',
+            user_name=user_name,
+            user_id=acting_user_id,
+            details='added this'
+        )
 
         return jsonify({
             'success': True,
@@ -1024,5 +1061,55 @@ def api_get_task_timelogs(task_id: int):
         'count': len(logs),
         'timelogs': [log.to_dict() for log in logs]
     }), 200
+
+
+# -------------------------------------------------------------------
+# 11. Lightweight Live Changes Polling (GET /api/changes?since=<timestamp>)
+# -------------------------------------------------------------------
+
+@api_bp.route('/changes', methods=['GET'])
+def api_get_changes():
+    """
+    Lightweight polling endpoint polled every 3 seconds from main.js.
+    Returns all task mutations (moves, edits, adds, deletes) that occurred
+    after the given 'since' timestamp, allowing real-time multi-user live sync.
+
+    Query Params:
+        since (str): ISO 8601 string (e.g. '2026-11-05T13:30:00Z') or Unix epoch float.
+
+    Returns:
+        JSON with change records, server timestamp, and count.
+    """
+    since_str = request.args.get('since', '').strip()
+    since_dt = None
+
+    if since_str:
+        try:
+            # Check if numeric epoch timestamp
+            if since_str.replace('.', '', 1).isdigit():
+                since_dt = datetime.utcfromtimestamp(float(since_str))
+            else:
+                # ISO timestamp string
+                clean_ts = since_str.replace('Z', '').split('+')[0]
+                since_dt = datetime.fromisoformat(clean_ts)
+        except Exception:
+            since_dt = datetime.utcnow() - timedelta(seconds=15)
+    else:
+        since_dt = datetime.utcnow() - timedelta(seconds=15)
+
+    # Query changes since timestamp
+    changes = TaskChange.query.filter(
+        TaskChange.timestamp > since_dt
+    ).order_by(TaskChange.timestamp.asc()).limit(50).all()
+
+    server_now = datetime.utcnow()
+    return jsonify({
+        'success': True,
+        'server_time': server_now.isoformat() + 'Z',
+        'since': since_dt.isoformat() + 'Z',
+        'count': len(changes),
+        'changes': [c.to_dict() for c in changes]
+    }), 200
+
 
 

@@ -11,6 +11,7 @@ This module defines three primary entities:
 """
 
 from datetime import datetime, date
+from typing import Optional
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
 from app import db
@@ -402,4 +403,90 @@ class TimeLog(db.Model):
 
     def __repr__(self) -> str:
         return f"<TimeLog id={self.id} task_id={self.task_id} user_id={self.user_id} duration={self.duration_minutes}m>"
+
+
+class TaskChange(db.Model):
+    """
+    TaskChange Model
+    ----------------
+    Records task updates, moves, creations, and deletions for live polling synchronization across clients.
+    """
+    __tablename__ = 'task_changes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, nullable=True, index=True)
+    user_id = db.Column(db.Integer, nullable=True)
+    user_name = db.Column(db.String(100), nullable=False, default='Someone')
+    action = db.Column(db.String(50), nullable=False)  # 'moved', 'edited', 'added', 'deleted'
+    details = db.Column(db.String(255), nullable=True)  # e.g. 'moved this to Doing', 'edited this'
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    task_data_json = db.Column(db.Text, nullable=True)
+
+    def to_dict(self) -> dict:
+        import json
+        task_dict = None
+        if self.task_data_json:
+            try:
+                task_dict = json.loads(self.task_data_json)
+            except Exception:
+                task_dict = None
+
+        name_parts = self.user_name.strip().split()
+        initials = ''.join([part[0].upper() for part in name_parts[:2]]) if name_parts else '?'
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'user_id': self.user_id,
+            'user_name': self.user_name,
+            'user_initials': initials,
+            'action': self.action,
+            'details': self.details,
+            'message': f"{self.user_name} {self.details}" if self.details else f"{self.user_name} updated this",
+            'timestamp': self.timestamp.isoformat() + 'Z',
+            'task': task_dict
+        }
+
+    def __repr__(self) -> str:
+        return f"<TaskChange id={self.id} action='{self.action}' by='{self.user_name}' at='{self.timestamp}'>"
+
+
+def record_task_change(task, action: str, user_name: str = None, user_id: int = None, details: str = None) -> Optional['TaskChange']:
+    """
+    Utility function to record a task mutation into task_changes table for live polling.
+    """
+    import json
+    try:
+        task_data = task.to_dict() if hasattr(task, 'to_dict') else None
+        first_name = user_name.split()[0] if user_name else 'Someone'
+
+        if not details:
+            if action == 'moved':
+                status_name = task.status.capitalize() if hasattr(task, 'status') else 'new status'
+                details = f"moved this to {status_name}"
+            elif action == 'edited':
+                details = "edited this"
+            elif action == 'added':
+                details = "added this"
+            elif action == 'deleted':
+                details = "deleted this"
+            else:
+                details = f"{action} this"
+
+        change = TaskChange(
+            task_id=task.id if hasattr(task, 'id') else None,
+            user_id=user_id,
+            user_name=first_name,
+            action=action,
+            details=details,
+            task_data_json=json.dumps(task_data) if task_data else None,
+            timestamp=datetime.utcnow()
+        )
+        db.session.add(change)
+        db.session.commit()
+        return change
+    except Exception:
+        db.session.rollback()
+        return None
+
+
 
