@@ -28,6 +28,7 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
+    initQuickAddBar();
     initSortableKanban();
     initSortableMatrix();
     initViewModeToggle();
@@ -1423,5 +1424,221 @@ function initNavbarToggle() {
         });
     });
 }
+
+/**
+ * Natural Language Quick-Add Bar with Live Parsed Preview:
+ * - Real-time parsing via /api/tasks/parse using Python regex and dateparser
+ * - Debounced preview with dynamic chips for Title, Due Date, Priority, Assignee, and Importance
+ * - Instant creation via /api/tasks/quick-add with celebratory feedback
+ */
+function initQuickAddBar() {
+    const form = document.getElementById('quick-add-form');
+    const input = document.getElementById('quick-add-input');
+    const clearBtn = document.getElementById('quick-add-clear-btn');
+    const submitBtn = document.getElementById('quick-add-submit-btn');
+    const preview = document.getElementById('quick-add-preview');
+
+    if (!form || !input) return;
+
+    // Check for stored toast message after reload
+    try {
+        const storedToast = sessionStorage.getItem('taskmanager-flash-toast');
+        if (storedToast) {
+            sessionStorage.removeItem('taskmanager-flash-toast');
+            const data = JSON.parse(storedToast);
+            if (data && data.message) {
+                showToast(data.message, data.type || 'success');
+            }
+        }
+    } catch (e) {}
+
+    // Preview elements
+    const chipTitle = document.getElementById('preview-chip-title');
+    const valTitle = document.getElementById('preview-val-title');
+
+    const chipDate = document.getElementById('preview-chip-date');
+    const valDate = document.getElementById('preview-val-date');
+
+    const chipPriority = document.getElementById('preview-chip-priority');
+    const valPriority = document.getElementById('preview-val-priority');
+    const iconPriority = document.getElementById('preview-icon-priority');
+
+    const chipAssignee = document.getElementById('preview-chip-assignee');
+    const valAssignee = document.getElementById('preview-val-assignee');
+
+    const chipImportant = document.getElementById('preview-chip-important');
+
+    let debounceTimer = null;
+    let abortController = null;
+
+    function renderPreview(parsed) {
+        if (!parsed) {
+            if (preview) preview.style.display = 'none';
+            return;
+        }
+
+        if (preview) preview.style.display = 'flex';
+
+        // 1. Title
+        if (valTitle) {
+            valTitle.textContent = parsed.title || 'Untitled Task';
+        }
+
+        // 2. Due Date
+        if (chipDate && valDate) {
+            if (parsed.due_date_human) {
+                valDate.textContent = parsed.due_date_human;
+                chipDate.style.display = 'inline-flex';
+            } else {
+                chipDate.style.display = 'none';
+            }
+        }
+
+        // 3. Priority
+        if (chipPriority && valPriority) {
+            const prio = parsed.priority || 'medium';
+            valPriority.textContent = parsed.priority_label || (prio.charAt(0).toUpperCase() + prio.slice(1));
+            chipPriority.classList.remove('priority-high', 'priority-medium', 'priority-low');
+            chipPriority.classList.add(`priority-${prio}`);
+
+            if (iconPriority) {
+                if (prio === 'high') iconPriority.textContent = '🔴';
+                else if (prio === 'low') iconPriority.textContent = '🟢';
+                else iconPriority.textContent = '🟡';
+            }
+        }
+
+        // 4. Assignee
+        if (chipAssignee && valAssignee) {
+            if (parsed.assignee_name) {
+                if (parsed.assignee_found) {
+                    valAssignee.textContent = parsed.assignee_name;
+                    chipAssignee.title = `Assigned to ${parsed.assignee_name}`;
+                } else {
+                    valAssignee.textContent = `${parsed.assignee_raw || parsed.assignee_name} (new)`;
+                    chipAssignee.title = 'Assignee not yet in system';
+                }
+                chipAssignee.style.display = 'inline-flex';
+            } else {
+                chipAssignee.style.display = 'none';
+            }
+        }
+
+        // 5. Important
+        if (chipImportant) {
+            chipImportant.style.display = parsed.important ? 'inline-flex' : 'none';
+        }
+    }
+
+    async function fetchParsePreview(text) {
+        if (abortController) {
+            abortController.abort();
+        }
+        abortController = new AbortController();
+
+        try {
+            const response = await fetch('/api/tasks/parse', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ text }),
+                signal: abortController.signal
+            });
+
+            if (!response.ok) return;
+            const data = await response.json();
+            if (data.success && data.parsed) {
+                renderPreview(data.parsed);
+            }
+        } catch (err) {
+            if (err.name !== 'AbortError') {
+                console.error('Error parsing task preview:', err);
+            }
+        }
+    }
+
+    function handleInputChange() {
+        const value = input.value.trim();
+
+        if (!value) {
+            if (clearBtn) clearBtn.style.display = 'none';
+            if (submitBtn) submitBtn.disabled = true;
+            if (preview) preview.style.display = 'none';
+            if (abortController) abortController.abort();
+            clearTimeout(debounceTimer);
+            return;
+        }
+
+        if (clearBtn) clearBtn.style.display = 'block';
+        if (submitBtn) submitBtn.disabled = false;
+
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            fetchParsePreview(value);
+        }, 150);
+    }
+
+    input.addEventListener('input', handleInputChange);
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            input.value = '';
+            handleInputChange();
+            input.focus();
+        });
+    }
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const value = input.value.trim();
+        if (!value) return;
+
+        const btnText = submitBtn.querySelector('.quick-add-btn-text');
+        const spinner = submitBtn.querySelector('.quick-add-spinner');
+
+        submitBtn.disabled = true;
+        if (btnText) btnText.textContent = 'Adding...';
+        if (spinner) spinner.style.display = 'inline-block';
+
+        try {
+            const response = await fetch('/api/tasks/quick-add', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ text: value })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                try {
+                    sessionStorage.setItem('taskmanager-flash-toast', JSON.stringify({
+                        message: `✨ ${result.message || 'Task created successfully!'}`,
+                        type: 'success'
+                    }));
+                } catch (e) {}
+
+                // Reload smoothly to update Kanban columns, metrics, Eisenhower matrix, and activity log
+                window.location.reload();
+            } else {
+                showToast(result.error || 'Failed to create task.', 'error');
+                submitBtn.disabled = false;
+                if (btnText) btnText.textContent = 'Add Task';
+                if (spinner) spinner.style.display = 'none';
+            }
+        } catch (err) {
+            console.error('Error submitting quick task:', err);
+            showToast('Network error while adding task. Please try again.', 'error');
+            submitBtn.disabled = false;
+            if (btnText) btnText.textContent = 'Add Task';
+            if (spinner) spinner.style.display = 'none';
+        }
+    });
+}
+
 
 

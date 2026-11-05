@@ -8,3 +8,4 @@ Flask-Login>=0.6.3    # User session management, login, logout, and protected ro
 Werkzeug>=3.0.0       # WSGI utility library, used here for secure password hashing
 python-dotenv>=1.0.0  # Loads environment variables from a .env file (optional)
 gunicorn>=21.2.0      # Production WSGI HTTP server for Render/Linux deployment
+dateparser>=1.2.0     # Natural language date parsing for quick-add task bar

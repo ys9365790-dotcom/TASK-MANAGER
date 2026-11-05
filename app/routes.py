@@ -376,6 +376,62 @@ def create_task():
     return render_template('task_form.html', action='create', task=None, users=users)
 
 
+@main_bp.route('/tasks/quick-add', methods=['POST'])
+@login_required
+def quick_add_task():
+    """
+    Handles natural language task creation from quick-add bar form submission.
+    Parses title, due date, priority, @assignee, and importance.
+    """
+    from app.task_parser import parse_quick_task
+
+    raw_text = request.form.get('quick_text', '').strip()
+    if not raw_text:
+        flash('Please enter a task description.', 'warning')
+        return redirect(url_for('main.index'))
+
+    all_users = [{'id': u.id, 'name': u.name, 'email': u.email} for u in User.query.all()]
+    parsed = parse_quick_task(raw_text, users=all_users)
+
+    if not parsed or not parsed.get('title'):
+        flash('Could not parse a valid task title from input.', 'danger')
+        return redirect(url_for('main.index'))
+
+    due_date_obj = None
+    if parsed.get('due_date'):
+        try:
+            due_date_obj = datetime.strptime(parsed['due_date'], '%Y-%m-%d').date()
+        except ValueError:
+            due_date_obj = None
+
+    try:
+        new_task = Task(
+            title=parsed['title'],
+            description=None,
+            status='todo',
+            priority=parsed['priority'],
+            important=parsed['important'],
+            due_date=due_date_obj,
+            assigned_to=parsed['assignee_id'],
+            created_by=current_user.id
+        )
+        db.session.add(new_task)
+        db.session.commit()
+
+        log_activity(
+            action=f"Quick-Add: {current_user.name} created task '{new_task.title}'",
+            task_id=new_task.id,
+            user_id=current_user.id
+        )
+        flash(f"Task '{new_task.title}' created successfully!", 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Failed to create task: {str(e)}', 'danger')
+
+    return redirect(url_for('main.index'))
+
+
+
 @main_bp.route('/tasks/<int:task_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_task(task_id: int):

@@ -746,3 +746,150 @@ def api_get_analytics():
         },
         'priority_distribution': priority_distribution
     }), 200
+
+
+# -------------------------------------------------------------------
+# 8. Natural Language Quick-Add Parser Endpoint (POST / GET /api/tasks/parse)
+# -------------------------------------------------------------------
+
+@api_bp.route('/tasks/parse', methods=['GET', 'POST'])
+def api_parse_task():
+    """
+    Parses a natural language task description string using Python regex
+    and the dateparser library.
+
+    Accepts:
+        POST body: JSON {'text': 'Finish report tomorrow high priority @ravi important'}
+        GET query: ?text=... or ?q=...
+
+    Returns:
+        JSON with parsed attributes (title, due_date, due_date_human, priority,
+        important, assignee_id, assignee_name, assignee_found, etc.)
+    """
+    from app.task_parser import parse_quick_task
+
+    text = ''
+    if request.method == 'POST' and request.is_json:
+        payload = request.get_json(silent=True) or {}
+        text = payload.get('text', '')
+    elif request.method == 'GET':
+        text = request.args.get('text') or request.args.get('q', '')
+    else:
+        text = request.form.get('text', '')
+
+    text = str(text or '').strip()
+    if not text:
+        return jsonify({
+            'success': True,
+            'parsed': None,
+            'message': 'Empty input text'
+        }), 200
+
+    # Retrieve all registered users for mention resolution
+    all_users = [{'id': u.id, 'name': u.name, 'email': u.email} for u in User.query.all()]
+    parsed = parse_quick_task(text, users=all_users)
+
+    return jsonify({
+        'success': True,
+        'parsed': parsed
+    }), 200
+
+
+# -------------------------------------------------------------------
+# 9. Natural Language Quick-Create Endpoint (POST /api/tasks/quick-add)
+# -------------------------------------------------------------------
+
+@api_bp.route('/tasks/quick-add', methods=['POST'])
+def api_quick_add_task():
+    """
+    Creates a new task directly from a natural language sentence.
+    Uses app.task_parser to extract title, due date, priority, assignee,
+    and importance, then persists the record and logs the activity.
+    """
+    from app.task_parser import parse_quick_task
+    from datetime import datetime
+
+    raw_text = ''
+    overrides = {}
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+        raw_text = payload.get('text', '')
+        overrides = payload
+    else:
+        raw_text = request.form.get('quick_text', '') or request.form.get('text', '')
+
+    raw_text = str(raw_text or '').strip()
+    if not raw_text:
+        return jsonify({
+            'success': False,
+            'error': 'Text is required to create a task.'
+        }), 400
+
+    all_users = [{'id': u.id, 'name': u.name, 'email': u.email} for u in User.query.all()]
+    parsed = parse_quick_task(raw_text, users=all_users)
+
+    if not parsed or not parsed.get('title'):
+        return jsonify({
+            'success': False,
+            'error': 'Could not extract a valid task title from input.'
+        }), 400
+
+    # Allow explicit overrides from payload if provided
+    title = overrides.get('title') or parsed['title']
+    priority = overrides.get('priority') or parsed['priority']
+    important = overrides.get('important') if 'important' in overrides else parsed['important']
+    assigned_to = overrides.get('assigned_to') if 'assigned_to' in overrides else parsed['assignee_id']
+    due_date_str = overrides.get('due_date') or parsed['due_date']
+    status = overrides.get('status', 'todo')
+
+    # Parse due_date date object
+    due_date_obj = None
+    if due_date_str:
+        try:
+            due_date_obj = datetime.strptime(str(due_date_str).strip()[:10], '%Y-%m-%d').date()
+        except ValueError:
+            due_date_obj = None
+
+    acting_user_id = get_acting_user_id(overrides if request.is_json else None)
+    if not acting_user_id:
+        return jsonify({
+            'success': False,
+            'error': 'No registered user found to attribute task creation to.'
+        }), 400
+
+    try:
+        new_task = Task(
+            title=title,
+            description=None,
+            status=status,
+            priority=priority,
+            important=important,
+            due_date=due_date_obj,
+            assigned_to=assigned_to,
+            created_by=acting_user_id
+        )
+        db.session.add(new_task)
+        db.session.commit()
+
+        user_record = User.query.get(acting_user_id)
+        user_name = user_record.name if user_record else f"User #{acting_user_id}"
+        log_api_activity(
+            action=f"Quick-Add: {user_name} created '{new_task.title}' via quick-add bar",
+            task_id=new_task.id,
+            user_id=acting_user_id
+        )
+
+        return jsonify({
+            'success': True,
+            'message': f"Task '{new_task.title}' created successfully!",
+            'task': new_task.to_dict(),
+            'parsed': parsed
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': f'Failed to create task: {str(e)}'
+        }), 500
+

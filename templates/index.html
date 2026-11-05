@@ -73,6 +73,76 @@ Features:
         </div>
     </div>
 
+    <!-- Quick-Add Task Bar (Natural Language Parser & Live Preview) -->
+    <div class="quick-add-card" id="quick-add-card">
+        <form id="quick-add-form" action="{{ url_for('main.quick_add_task') }}" method="POST" class="quick-add-form" autocomplete="off">
+            <div class="quick-add-input-row">
+                <div class="quick-add-input-wrapper">
+                    <span class="quick-add-sparkle" title="Natural Language Task Parser">⚡</span>
+                    <input 
+                        type="text" 
+                        id="quick-add-input" 
+                        name="quick_text"
+                        placeholder="Quick add: &ldquo;Finish report tomorrow high priority @ravi important&rdquo;" 
+                        class="quick-add-input"
+                        autocomplete="off"
+                        spellcheck="false"
+                        aria-label="Quick add task input"
+                    >
+                    <button type="button" id="quick-add-clear-btn" class="quick-add-clear-btn" style="display: none;" title="Clear input">&times;</button>
+                </div>
+                <button type="submit" id="quick-add-submit-btn" class="btn btn-primary quick-add-btn" disabled>
+                    <span class="quick-add-btn-icon">+</span>
+                    <span class="quick-add-btn-text">Add Task</span>
+                    <span class="quick-add-spinner" style="display: none;">⏳</span>
+                </button>
+            </div>
+
+            <!-- Live Preview of Parsed Fields -->
+            <div id="quick-add-preview" class="quick-add-preview" style="display: none;">
+                <div class="quick-add-preview-header">
+                    <span class="preview-heading">✨ Live Parsed Preview</span>
+                    <span class="preview-shortcut-hint">Press <kbd>Enter</kbd> to add</span>
+                </div>
+                <div class="quick-add-chips-container" id="quick-add-chips">
+                    <!-- Chip: Title -->
+                    <span class="preview-chip chip-title" id="preview-chip-title">
+                        <span class="chip-icon">🏷️</span>
+                        <span class="chip-label">Title:</span>
+                        <strong class="chip-value" id="preview-val-title">-</strong>
+                    </span>
+
+                    <!-- Chip: Due Date -->
+                    <span class="preview-chip chip-date" id="preview-chip-date" style="display: none;">
+                        <span class="chip-icon">📅</span>
+                        <span class="chip-label">Due:</span>
+                        <span class="chip-value" id="preview-val-date">-</span>
+                    </span>
+
+                    <!-- Chip: Priority -->
+                    <span class="preview-chip chip-priority" id="preview-chip-priority">
+                        <span class="chip-icon" id="preview-icon-priority">🟡</span>
+                        <span class="chip-label">Priority:</span>
+                        <span class="chip-value" id="preview-val-priority">Medium</span>
+                    </span>
+
+                    <!-- Chip: Assignee -->
+                    <span class="preview-chip chip-assignee" id="preview-chip-assignee" style="display: none;">
+                        <span class="chip-icon">👤</span>
+                        <span class="chip-label">Assignee:</span>
+                        <span class="chip-value" id="preview-val-assignee">-</span>
+                    </span>
+
+                    <!-- Chip: Important -->
+                    <span class="preview-chip chip-important" id="preview-chip-important" style="display: none;">
+                        <span class="chip-icon">⭐</span>
+                        <span class="chip-value">Important</span>
+                    </span>
+                </div>
+            </div>
+        </form>
+    </div>
+
     <!-- Filter and Search Toolbar + Board View Mode Toggle (Client-Side) -->
     <div class="toolbar-card">
         <div class="filter-toolbar">
