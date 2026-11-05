@@ -135,6 +135,143 @@ Automatically reacts to Dark/Light mode theme changes in real time.
 
     </div>
 
+    <!-- GitHub-Style Contribution Heatmap Card (Last 12 Weeks) -->
+    <div class="chart-card col-heatmap" id="contribution-heatmap-card" style="margin-top: 1.5rem; margin-bottom: 1.5rem;">
+        <div class="heatmap-header">
+            <div class="heatmap-title-area">
+                <div class="heatmap-badge">
+                    <span class="heatmap-badge-icon">🟩</span>
+                    <span>Productivity Heatmap</span>
+                </div>
+                <div>
+                    <h3 class="heatmap-title">Daily Task Completion Heatmap (Last 12 Weeks)</h3>
+                    <p class="text-muted heatmap-subtitle">
+                        GitHub-style daily task completions grouped from ActivityLog with streak tracking.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Streak Counters & Completion Stats -->
+            <div class="heatmap-streaks-bar">
+                <div class="streak-kpi-card" title="Consecutive active days ending today or yesterday">
+                    <span class="streak-kpi-icon">🔥</span>
+                    <div class="streak-kpi-info">
+                        <span class="streak-kpi-label">Current Streak</span>
+                        <strong class="streak-kpi-value text-amber" id="heatmap-current-streak">
+                            {{ contributions.current_streak if contributions else 0 }} days
+                        </strong>
+                    </div>
+                </div>
+
+                <div class="streak-kpi-card" title="Longest consecutive active day streak in this period">
+                    <span class="streak-kpi-icon">🏆</span>
+                    <div class="streak-kpi-info">
+                        <span class="streak-kpi-label">Longest Streak</span>
+                        <strong class="streak-kpi-value text-success" id="heatmap-longest-streak">
+                            {{ contributions.longest_streak if contributions else 0 }} days
+                        </strong>
+                    </div>
+                </div>
+
+                <div class="streak-kpi-card" title="Total tasks completed across the last 12 weeks">
+                    <span class="streak-kpi-icon">🎯</span>
+                    <div class="streak-kpi-info">
+                        <span class="streak-kpi-label">Completed</span>
+                        <strong class="streak-kpi-value text-primary" id="heatmap-total-completed">
+                            {{ contributions.total_completed if contributions else 0 }} tasks
+                        </strong>
+                    </div>
+                </div>
+
+                <div class="streak-kpi-card" title="Total days with at least one completed task">
+                    <span class="streak-kpi-icon">📅</span>
+                    <div class="streak-kpi-info">
+                        <span class="streak-kpi-label">Active Days</span>
+                        <strong class="streak-kpi-value" id="heatmap-active-days">
+                            {{ contributions.active_days if contributions else 0 }} days
+                        </strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Heatmap Graph Wrapper (Plain CSS Grid) -->
+        <div class="heatmap-container-wrapper">
+            <div class="heatmap-scroll-area">
+                <div class="heatmap-calendar-layout">
+                    <!-- Day Labels on Left (Sun, Mon, Wed, Fri) -->
+                    <div class="heatmap-day-labels">
+                        <span class="day-label"></span>
+                        <span class="day-label">Mon</span>
+                        <span class="day-label"></span>
+                        <span class="day-label">Wed</span>
+                        <span class="day-label"></span>
+                        <span class="day-label">Fri</span>
+                        <span class="day-label"></span>
+                    </div>
+
+                    <!-- Main Grid Area: Month Header Row + 12x7 Grid -->
+                    <div class="heatmap-main-grid-area">
+                        <!-- Month Labels Header (12 Columns) -->
+                        <div class="heatmap-month-labels" id="heatmap-month-labels">
+                            {% if contributions and contributions.month_labels %}
+                                {% set month_map = {} %}
+                                {% for m in contributions.month_labels %}
+                                    {% set _ = month_map.update({m.week_index: m.month}) %}
+                                {% endfor %}
+                                {% for w in range(12) %}
+                                    <span class="month-col">{{ month_map.get(w, '') }}</span>
+                                {% endfor %}
+                            {% else %}
+                                {% for w in range(12) %}
+                                    <span class="month-col"></span>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+
+                        <!-- 12-Week CSS Grid (7 rows, 12 columns, grid-auto-flow: column) -->
+                        <div class="heatmap-grid" id="heatmap-grid">
+                            {% if contributions and contributions.days %}
+                                {% for d in contributions.days %}
+                                    <div 
+                                        class="heatmap-cell level-{{ d.level }} {% if d.is_today %}is-today{% endif %} {% if d.is_future %}is-future{% endif %}"
+                                        data-date="{{ d.date }}"
+                                        data-count="{{ d.count }}"
+                                        data-tooltip="{% if d.is_future %}{{ d.formatted_date }} (Future){% elif d.count == 0 %}No tasks completed on {{ d.formatted_date }}{% else %}<strong>{{ d.count }} task{% if d.count > 1 %}s{% endif %} completed</strong> on {{ d.formatted_date }}{% endif %}"
+                                        aria-label="{{ d.date }}: {{ d.count }} tasks completed"
+                                    ></div>
+                                {% endfor %}
+                            {% else %}
+                                {% for i in range(84) %}
+                                    <div class="heatmap-cell level-0"></div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Heatmap Footer with Legend -->
+            <div class="heatmap-footer">
+                <div class="heatmap-footer-note">
+                    <span class="text-muted">💡 Consistent daily activity builds momentum and keeps streaks alive.</span>
+                </div>
+                <div class="heatmap-legend">
+                    <span class="legend-text">Less</span>
+                    <span class="legend-box level-0" title="0 tasks completed"></span>
+                    <span class="legend-box level-1" title="1 task completed"></span>
+                    <span class="legend-box level-2" title="2 tasks completed"></span>
+                    <span class="legend-box level-3" title="3 tasks completed"></span>
+                    <span class="legend-box level-4" title="4+ tasks completed"></span>
+                    <span class="legend-text">More</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Floating Tooltip for Hovering on Squares -->
+        <div id="heatmap-tooltip" class="heatmap-tooltip" style="display: none;"></div>
+    </div>
+
     <!-- Secondary Charts & Member Table Grid -->
     <div class="dashboard-details-grid">
 
@@ -403,6 +540,9 @@ document.addEventListener('DOMContentLoaded', () => {
             renderMemberTable(data.member_distribution.members, data.workload_summary);
             renderWorkloadSuggestions(data.workload_summary);
             renderDailyFocusChart(data.daily_focus_time);
+            if (data.contributions) {
+                renderContributionHeatmap(data.contributions);
+            }
 
         } catch (err) {
             console.error('Analytics load failure:', err);
@@ -1005,6 +1145,115 @@ document.addEventListener('DOMContentLoaded', () => {
             focusChart.update();
         }
     }
+
+    /**
+     * Renders GitHub-Style Contribution Heatmap & Streak Counters
+     */
+    function renderContributionHeatmap(contributions) {
+        if (!contributions) return;
+
+        // 1. Update Streak & Summary KPIs
+        const currentStreakEl = document.getElementById('heatmap-current-streak');
+        const longestStreakEl = document.getElementById('heatmap-longest-streak');
+        const totalCompletedEl = document.getElementById('heatmap-total-completed');
+        const activeDaysEl = document.getElementById('heatmap-active-days');
+
+        if (currentStreakEl) {
+            currentStreakEl.textContent = `${contributions.current_streak || 0} day${contributions.current_streak === 1 ? '' : 's'}`;
+        }
+        if (longestStreakEl) {
+            longestStreakEl.textContent = `${contributions.longest_streak || 0} day${contributions.longest_streak === 1 ? '' : 's'}`;
+        }
+        if (totalCompletedEl) {
+            totalCompletedEl.textContent = `${contributions.total_completed || 0} task${contributions.total_completed === 1 ? '' : 's'}`;
+        }
+        if (activeDaysEl) {
+            activeDaysEl.textContent = `${contributions.active_days || 0} day${contributions.active_days === 1 ? '' : 's'}`;
+        }
+
+        // 2. Month Labels (12 Columns aligned with week columns)
+        const monthLabelsEl = document.getElementById('heatmap-month-labels');
+        if (monthLabelsEl) {
+            const cols = Array(12).fill('');
+            if (Array.isArray(contributions.month_labels)) {
+                contributions.month_labels.forEach(m => {
+                    if (m.week_index >= 0 && m.week_index < 12) {
+                        cols[m.week_index] = m.month;
+                    }
+                });
+            }
+            monthLabelsEl.innerHTML = cols.map(m => `<span class="month-col">${m}</span>`).join('');
+        }
+
+        // 3. Grid Cells (84 Day Cells in 12x7 CSS Grid)
+        const gridEl = document.getElementById('heatmap-grid');
+        if (gridEl && Array.isArray(contributions.days)) {
+            gridEl.innerHTML = contributions.days.map(d => {
+                let tooltipText = '';
+                if (d.is_future) {
+                    tooltipText = `${d.formatted_date} (Future)`;
+                } else if (d.count === 0) {
+                    tooltipText = `No tasks completed on ${d.formatted_date}`;
+                } else {
+                    tooltipText = `<strong>${d.count} task${d.count === 1 ? '' : 's'} completed</strong> on ${d.formatted_date}`;
+                }
+
+                const todayClass = d.is_today ? 'is-today' : '';
+                const futureClass = d.is_future ? 'is-future' : '';
+
+                return `
+                    <div 
+                        class="heatmap-cell level-${d.level} ${todayClass} ${futureClass}"
+                        data-date="${d.date}"
+                        data-count="${d.count}"
+                        data-tooltip="${tooltipText}"
+                        aria-label="${d.date}: ${d.count} tasks completed"
+                    ></div>
+                `;
+            }).join('');
+        }
+
+        initHeatmapTooltips();
+    }
+
+    /**
+     * Initializes hover tooltips on contribution heatmap cells
+     */
+    function initHeatmapTooltips() {
+        const tooltip = document.getElementById('heatmap-tooltip');
+        if (!tooltip) return;
+
+        const cells = document.querySelectorAll('.heatmap-cell');
+        cells.forEach(cell => {
+            cell.addEventListener('mouseenter', () => {
+                const text = cell.getAttribute('data-tooltip');
+                if (!text) return;
+                tooltip.innerHTML = text;
+                tooltip.style.display = 'block';
+
+                const rect = cell.getBoundingClientRect();
+                const tipRect = tooltip.getBoundingClientRect();
+
+                let top = rect.top - tipRect.height - 8;
+                let left = rect.left + (rect.width / 2) - (tipRect.width / 2);
+
+                if (left < 10) left = 10;
+                if (left + tipRect.width > window.innerWidth - 10) {
+                    left = window.innerWidth - tipRect.width - 10;
+                }
+
+                tooltip.style.top = `${top + window.scrollY}px`;
+                tooltip.style.left = `${left + window.scrollX}px`;
+            });
+
+            cell.addEventListener('mouseleave', () => {
+                tooltip.style.display = 'none';
+            });
+        });
+    }
+
+    // Initialize tooltips on initial render
+    initHeatmapTooltips();
 
     // Refresh button event listener
     const refreshBtn = document.getElementById('refresh-analytics-btn');

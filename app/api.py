@@ -20,7 +20,7 @@ from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify
 from flask_login import current_user
 from app import db
-from app.models import Task, User, ActivityLog, TimeLog, TaskChange, record_task_change, calculate_workload_summary
+from app.models import Task, User, ActivityLog, TimeLog, TaskChange, record_task_change, calculate_workload_summary, get_activity_contribution_stats
 
 # Define the REST API Blueprint with URL prefix '/api'
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -769,6 +769,9 @@ def api_get_analytics():
         'formatted_total': formatted_total_focus
     }
 
+    # Contribution Heatmap & Streak Stats (Last 12 Weeks)
+    contributions = get_activity_contribution_stats(weeks=12)
+
     return jsonify({
         'success': True,
         'summary': {
@@ -790,7 +793,8 @@ def api_get_analytics():
         },
         'priority_distribution': priority_distribution,
         'daily_focus_time': daily_focus_time,
-        'workload_summary': workload_summary
+        'workload_summary': workload_summary,
+        'contributions': contributions
     }), 200
 
 
@@ -1133,6 +1137,26 @@ def api_get_next_up():
         'count': len(top_tasks),
         'tasks': [t.to_dict() for t in top_tasks]
     }), 200
+
+
+# -------------------------------------------------------------------
+# 12. Contribution Heatmap & Streak API (GET /api/analytics/contributions)
+# -------------------------------------------------------------------
+
+@api_bp.route('/analytics/contributions', methods=['GET'])
+@api_bp.route('/contributions', methods=['GET'])
+def api_get_contributions():
+    """
+    Returns daily task completions from the ActivityLog for the last N weeks (default: 12 weeks),
+    grouped by date, alongside current streak and longest streak counters.
+    """
+    weeks = request.args.get('weeks', type=int, default=12)
+    weeks = max(1, min(52, weeks))
+    user_id = request.args.get('user_id', type=int)
+
+    data = get_activity_contribution_stats(weeks=weeks, user_id=user_id)
+    return jsonify(data), 200
+
 
 
 

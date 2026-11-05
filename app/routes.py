@@ -23,7 +23,7 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from app import db
-from app.models import User, Task, ActivityLog, TaskChange, record_task_change, calculate_workload_summary
+from app.models import User, Task, ActivityLog, TaskChange, record_task_change, calculate_workload_summary, get_activity_contribution_stats
 
 # Define the main Blueprint
 main_bp = Blueprint('main', __name__)
@@ -613,9 +613,14 @@ def update_status(task_id: int):
         task.status = new_status
         db.session.commit()
 
-        # Log status change event
+        # Log status change event (specifically mark completed if moved to done)
+        if new_status == 'done':
+            action_desc = f"{current_user.name} completed task '{task.title}'"
+        else:
+            action_desc = f"{current_user.name} moved task '{task.title}' from '{old_status}' to '{new_status}'"
+
         log_activity(
-            action=f"{current_user.name} moved task '{task.title}' from '{old_status}' to '{new_status}'",
+            action=action_desc,
             task_id=task.id,
             user_id=current_user.id
         )
@@ -715,7 +720,12 @@ def dashboard_view():
     all_tasks = Task.query.all()
     all_users = User.query.order_by(User.name.asc()).all()
     workload_summary = calculate_workload_summary(all_tasks, all_users)
-    return render_template('dashboard.html', workload_summary=workload_summary)
+    contributions = get_activity_contribution_stats(weeks=12)
+    return render_template(
+        'dashboard.html',
+        workload_summary=workload_summary,
+        contributions=contributions
+    )
 
 
 @main_bp.route('/seed-demo-data')
@@ -896,6 +906,36 @@ def seed_demo_data():
             log_activity(f"Alex Rivera completed 'Patch SQLite Schema Migration Script for Eisenhower Matrix'", task_id=sample_tasks[2].id, user_id=u1.id)
             log_activity(f"Marcus Brody completed 'Refactor Frontend Design System with Glassmorphism & Tokens'", task_id=sample_tasks[5].id, user_id=u3.id)
             log_activity(f"Marcus Brody moved 'Prepare Weekly Team Standup & Sprint Retrospective Deck' to doing", task_id=sample_tasks[7].id, user_id=u3.id)
+
+            # Seed realistic task completion activity across the last 12 weeks for the GitHub-style heatmap
+            hist_completions = [
+                (0, u1.id, "Alex Rivera completed 'Deploy Hotfix to Production'"),
+                (1, u2.id, "Sarah Chen completed 'Refactor Session Storage'"),
+                (2, u3.id, "Marcus Brody completed 'Optimize Redis Cache'"),
+                (3, u1.id, "Alex Rivera completed 'Update OAuth Scopes'"),
+                (7, u1.id, "Alex Rivera completed 'Database Index Tuning'"),
+                (8, u2.id, "Sarah Chen completed 'Fix Token Expiration Bug'"),
+                (9, u3.id, "Marcus Brody completed 'Audit Cloud Run Memory Limits'"),
+                (10, u1.id, "Alex Rivera completed 'Configure CORS Policy'"),
+                (11, u2.id, "Sarah Chen completed 'Refactor Kanban Drag Listener'"),
+                (14, u3.id, "Marcus Brody completed 'Implement Password Hash Migration'"),
+                (15, u1.id, "Alex Rivera completed 'Setup Webhook Delivery Workers'"),
+                (21, u2.id, "Sarah Chen completed 'Build Rate Limiter Middleware'"),
+                (22, u3.id, "Marcus Brody completed 'Design System Token Unification'"),
+                (23, u1.id, "Alex Rivera completed 'Migrate Task Schema to SQLite'"),
+                (28, u2.id, "Sarah Chen completed 'Setup Sentry Error Monitoring'"),
+                (29, u3.id, "Marcus Brody completed 'Create User Onboarding Flow'"),
+                (35, u1.id, "Alex Rivera completed 'Configure SSL Certificates'"),
+                (42, u2.id, "Sarah Chen completed 'Implement CSRF Protection'"),
+                (49, u3.id, "Marcus Brody completed 'Setup Continuous Integration'"),
+                (56, u1.id, "Alex Rivera completed 'Initial Repository Setup'"),
+                (63, u2.id, "Sarah Chen completed 'Draft Product Architecture'"),
+                (70, u3.id, "Marcus Brody completed 'Configure ESLint and Prettier'")
+            ]
+            for days_ago, user_id, action_text in hist_completions:
+                log_dt = datetime.combine(today - timedelta(days=days_ago), datetime.min.time()) + timedelta(hours=14, minutes=30)
+                db.session.add(ActivityLog(action=action_text, user_id=user_id, timestamp=log_dt))
+            db.session.commit()
 
             flash('✅ 10 sample demo tasks successfully seeded! Demo login: alex.rivera@example.com / secure123', 'success')
         else:

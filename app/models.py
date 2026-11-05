@@ -10,7 +10,7 @@ This module defines three primary entities:
 3. ActivityLog: Represents an audit trail of actions performed on tasks or by users.
 """
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
@@ -655,6 +655,160 @@ def calculate_workload_summary(all_tasks, all_users) -> dict:
         'reassign_suggestions': reassign_suggestions,
         'members': member_details
     }
+
+
+def get_activity_contribution_stats(weeks: int = 12, user_id: int = None) -> dict:
+    """
+    Groups the ActivityLog by date for the last N weeks to power the GitHub-style
+    contribution heatmap, and calculates current and longest active day streaks.
+
+    Args:
+        weeks (int): Number of weeks to include in the contribution calendar (default: 12).
+        user_id (int, optional): Filter contributions for a specific user ID.
+
+    Returns:
+        dict: Containing total completed tasks, current streak, longest streak,
+              active days count, list of day objects with intensity levels (0-4),
+              and month labels mapped to week columns.
+    """
+    today = date.today()
+
+    # In GitHub contribution calendar, each week starts on Sunday (day 0) and ends on Saturday (day 6).
+    # Python's weekday(): Monday is 0, Sunday is 6.
+    sun_offset = (today.weekday() + 1) % 7
+    current_week_sunday = today - timedelta(days=sun_offset)
+    start_date = current_week_sunday - timedelta(weeks=weeks - 1)
+    end_date = current_week_sunday + timedelta(days=6)
+
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date, datetime.max.time())
+
+    # Build query grouping ActivityLog by date (db.func.date)
+    completion_filter = (
+        (ActivityLog.action.ilike('%completed%') & ~ActivityLog.action.ilike('%focus%')) |
+        ActivityLog.action.ilike("%to 'done'%") |
+        ActivityLog.action.ilike("%to done%") |
+        ActivityLog.action.ilike("%status changed%to 'done'%") |
+        ActivityLog.action.ilike("%marked%done%")
+    )
+
+    query = db.session.query(
+        db.func.date(ActivityLog.timestamp).label('log_date'),
+        db.func.count(ActivityLog.id).label('task_count')
+    ).filter(
+        ActivityLog.timestamp >= start_dt,
+        ActivityLog.timestamp <= end_dt,
+        completion_filter
+    )
+
+    if user_id:
+        query = query.filter(ActivityLog.user_id == user_id)
+
+    results = query.group_by(db.func.date(ActivityLog.timestamp)).all()
+
+    daily_counts = {r.log_date: r.task_count for r in results}
+
+    # Calculate Streaks:
+    # 1. Longest streak in the period
+    longest_streak = 0
+    temp_streak = 0
+    curr = start_date
+    while curr <= today:
+        d_str = curr.strftime('%Y-%m-%d')
+        if daily_counts.get(d_str, 0) > 0:
+            temp_streak += 1
+            if temp_streak > longest_streak:
+                longest_streak = temp_streak
+        else:
+            temp_streak = 0
+        curr += timedelta(days=1)
+
+    # 2. Current streak ending today (or yesterday if today has no contributions yet)
+    current_streak = 0
+    today_str = today.strftime('%Y-%m-%d')
+    yesterday_str = (today - timedelta(days=1)).strftime('%Y-%m-%d')
+
+    if daily_counts.get(today_str, 0) > 0:
+        check_day = today
+        while check_day >= start_date and daily_counts.get(check_day.strftime('%Y-%m-%d'), 0) > 0:
+            current_streak += 1
+            check_day -= timedelta(days=1)
+    elif daily_counts.get(yesterday_str, 0) > 0:
+        check_day = today - timedelta(days=1)
+        while check_day >= start_date and daily_counts.get(check_day.strftime('%Y-%m-%d'), 0) > 0:
+            current_streak += 1
+            check_day -= timedelta(days=1)
+    else:
+        current_streak = 0
+
+    # Build 84 day cells (weeks * 7)
+    days_list = []
+    month_labels = []
+    last_month_name = None
+
+    curr = start_date
+    total_days = weeks * 7
+    for day_idx in range(total_days):
+        d_str = curr.strftime('%Y-%m-%d')
+        count = daily_counts.get(d_str, 0) if curr <= today else 0
+        is_future = (curr > today)
+        is_today = (curr == today)
+
+        # Intensity level: 0 (empty), 1 (1 task), 2 (2 tasks), 3 (3 tasks), 4 (4+ tasks)
+        if is_future or count == 0:
+            level = 0
+        elif count == 1:
+            level = 1
+        elif count == 2:
+            level = 2
+        elif count == 3:
+            level = 3
+        else:
+            level = 4
+
+        week_idx = day_idx // 7
+        day_of_week = (curr.weekday() + 1) % 7  # 0=Sunday, 1=Monday, ..., 6=Saturday
+
+        # Compute Month label column placement (when month changes, place above starting week)
+        month_name = curr.strftime('%b')
+        if (curr.day <= 7 and month_name != last_month_name and day_of_week == 0) or day_idx == 0:
+            month_labels.append({
+                'month': month_name,
+                'week_index': week_idx
+            })
+            last_month_name = month_name
+
+        days_list.append({
+            'date': d_str,
+            'formatted_date': curr.strftime('%A, %b %d, %Y'),
+            'short_date': curr.strftime('%b %d'),
+            'count': count,
+            'level': level,
+            'day_of_week': day_of_week,
+            'day_name': curr.strftime('%a'),
+            'week_index': week_idx,
+            'is_today': is_today,
+            'is_future': is_future
+        })
+        curr += timedelta(days=1)
+
+    total_completed = sum(daily_counts.get(d['date'], 0) for d in days_list if not d['is_future'])
+    active_days = sum(1 for d in days_list if not d['is_future'] and d['count'] > 0)
+
+    return {
+        'success': True,
+        'weeks': weeks,
+        'start_date': start_date.strftime('%Y-%m-%d'),
+        'end_date': end_date.strftime('%Y-%m-%d'),
+        'total_completed': total_completed,
+        'active_days': active_days,
+        'current_streak': current_streak,
+        'longest_streak': longest_streak,
+        'daily_counts': daily_counts,
+        'days': days_list,
+        'month_labels': month_labels
+    }
+
 
 
 
