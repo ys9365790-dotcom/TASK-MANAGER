@@ -16,11 +16,11 @@ Every mutation (create, update, delete) and retrieval is thoroughly validated an
 logged into the ActivityLog database model.
 """
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify
 from flask_login import current_user
 from app import db
-from app.models import Task, User, ActivityLog
+from app.models import Task, User, ActivityLog, TimeLog
 
 # Define the REST API Blueprint with URL prefix '/api'
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -727,6 +727,46 @@ def api_get_analytics():
         'colors': ['#ef4444', '#f59e0b', '#10b981']
     }
 
+    # Daily Focus Time computation for the last 7 days
+    today = date.today()
+    focus_labels = []
+    focus_minutes = []
+    focus_hours = []
+
+    for i in range(6, -1, -1):
+        day = today - timedelta(days=i)
+        day_label = 'Today' if i == 0 else day.strftime('%a, %b %d')
+        focus_labels.append(day_label)
+
+        day_start = datetime.combine(day, datetime.min.time())
+        day_end = datetime.combine(day, datetime.max.time())
+
+        day_minutes = db.session.query(
+            db.func.coalesce(db.func.sum(TimeLog.duration_minutes), 0)
+        ).filter(
+            TimeLog.created_at >= day_start,
+            TimeLog.created_at <= day_end
+        ).scalar() or 0
+
+        focus_minutes.append(int(day_minutes))
+        focus_hours.append(round(day_minutes / 60.0, 1))
+
+    total_focus_minutes = db.session.query(
+        db.func.coalesce(db.func.sum(TimeLog.duration_minutes), 0)
+    ).scalar() or 0
+
+    hours = total_focus_minutes // 60
+    mins = total_focus_minutes % 60
+    formatted_total_focus = f"{hours}h {mins}m" if hours > 0 and mins > 0 else (f"{hours}h" if hours > 0 else f"{mins}m")
+
+    daily_focus_time = {
+        'labels': focus_labels,
+        'minutes': focus_minutes,
+        'hours': focus_hours,
+        'total_minutes': int(total_focus_minutes),
+        'formatted_total': formatted_total_focus
+    }
+
     return jsonify({
         'success': True,
         'summary': {
@@ -736,7 +776,9 @@ def api_get_analytics():
             'done': done_tasks,
             'overdue': overdue_tasks,
             'due_soon': due_soon_tasks,
-            'completion_rate': completion_rate
+            'completion_rate': completion_rate,
+            'total_focus_minutes': int(total_focus_minutes),
+            'formatted_total_focus': formatted_total_focus
         },
         'status_distribution': status_distribution,
         'member_distribution': {
@@ -744,7 +786,8 @@ def api_get_analytics():
             'counts': member_counts,
             'members': member_details
         },
-        'priority_distribution': priority_distribution
+        'priority_distribution': priority_distribution,
+        'daily_focus_time': daily_focus_time
     }), 200
 
 
@@ -892,4 +935,94 @@ def api_quick_add_task():
             'success': False,
             'error': f'Failed to create task: {str(e)}'
         }), 500
+
+
+# -------------------------------------------------------------------
+# 10. Task Focus Time Log Endpoints (POST /api/tasks/<id>/timelog)
+# -------------------------------------------------------------------
+
+@api_bp.route('/tasks/<int:task_id>/timelog', methods=['POST'])
+def api_log_task_time(task_id: int):
+    """
+    Records a focus time session for a specific task.
+
+    Accepts:
+        JSON body: {'duration_minutes': 25} (default: 25)
+
+    Returns:
+        JSON response with updated total focus time and the created timelog record.
+    """
+    task = Task.query.get(task_id)
+    if not task:
+        return jsonify({
+            'success': False,
+            'error': f'Task with ID {task_id} not found.'
+        }), 404
+
+    payload = request.get_json(silent=True) or {}
+    duration = payload.get('duration_minutes', 25)
+    try:
+        duration = int(duration)
+        if duration <= 0:
+            duration = 25
+    except (ValueError, TypeError):
+        duration = 25
+
+    acting_user_id = get_acting_user_id(payload)
+    if not acting_user_id:
+        acting_user_id = task.assigned_to or task.created_by
+
+    try:
+        timelog = TimeLog(
+            task_id=task.id,
+            user_id=acting_user_id,
+            duration_minutes=duration
+        )
+        db.session.add(timelog)
+        db.session.commit()
+
+        user_record = User.query.get(acting_user_id)
+        user_name = user_record.name if user_record else f"User #{acting_user_id}"
+        log_api_activity(
+            action=f"Focus: {user_name} completed a {duration}-minute focus session on '{task.title}'",
+            task_id=task.id,
+            user_id=acting_user_id
+        )
+
+        return jsonify({
+            'success': True,
+            'message': f"{duration} minutes logged on '{task.title}'!",
+            'task_id': task.id,
+            'total_focus_minutes': task.total_focus_minutes,
+            'formatted_focus_time': task.formatted_focus_time,
+            'timelog': timelog.to_dict()
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': f'Failed to record focus time: {str(e)}'
+        }), 500
+
+
+@api_bp.route('/tasks/<int:task_id>/timelog', methods=['GET'])
+def api_get_task_timelogs(task_id: int):
+    """
+    Retrieves all focus time logs recorded for a task.
+    """
+    task = Task.query.get(task_id)
+    if not task:
+        return jsonify({'success': False, 'error': f'Task with ID {task_id} not found.'}), 404
+
+    logs = task.time_logs.order_by(TimeLog.created_at.desc()).all()
+    return jsonify({
+        'success': True,
+        'task_id': task.id,
+        'total_focus_minutes': task.total_focus_minutes,
+        'formatted_focus_time': task.formatted_focus_time,
+        'count': len(logs),
+        'timelogs': [log.to_dict() for log in logs]
+    }), 200
+
 

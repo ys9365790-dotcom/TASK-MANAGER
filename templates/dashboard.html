@@ -82,6 +82,14 @@ Automatically reacts to Dark/Light mode theme changes in real time.
                 <span class="metric-value" id="stat-due-soon-tasks">-</span>
             </div>
         </div>
+
+        <div class="metric-card metric-card-focus" id="stat-card-focus" title="Total focus session time logged">
+            <div class="metric-icon metric-focus">⏱️</div>
+            <div class="metric-info">
+                <span class="metric-label">Total Focus Time</span>
+                <span class="metric-value" id="stat-focus-time">-</span>
+            </div>
+        </div>
     </div>
 
     <!-- Charts Grid (Doughnut & Bar Charts) -->
@@ -180,6 +188,25 @@ Automatically reacts to Dark/Light mode theme changes in real time.
 
     </div>
 
+    <!-- Daily Focus Time Chart Card -->
+    <div class="chart-card col-focus-chart" style="margin-top: 1.5rem;">
+        <div class="chart-card-header">
+            <div class="chart-title">
+                <h3>⏱️ Daily Focus Time (Past 7 Days)</h3>
+                <p class="text-muted">Total focused minutes tracked per day via Pomodoro timer.</p>
+            </div>
+            <span class="chart-pill" id="focus-chart-total-pill">0m total</span>
+        </div>
+
+        <div class="chart-canvas-container" style="height: 280px; position: relative;">
+            <canvas id="dailyFocusChart"></canvas>
+        </div>
+
+        <div class="chart-footer-note">
+            <span class="text-muted">🎯 Consistency is key: 25-minute Pomodoro intervals optimize retention and reduce burnout.</span>
+        </div>
+    </div>
+
 </div>
 {% endblock %}
 
@@ -197,10 +224,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let statusChart = null;
     let memberChart = null;
     let priorityChart = null;
+    let focusChart = null;
 
     let cachedStatusDist = null;
     let cachedMemberDist = null;
     let cachedPriorityDist = null;
+    let cachedFocusDist = null;
     let cachedSummary = null;
 
     /**
@@ -325,6 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cachedStatusDist = data.status_distribution;
             cachedMemberDist = data.member_distribution;
             cachedPriorityDist = data.priority_distribution;
+            cachedFocusDist = data.daily_focus_time;
             cachedSummary = data.summary;
 
             renderSummaryMetrics(data.summary);
@@ -332,6 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderMemberBarChart(data.member_distribution);
             renderPriorityDoughnut(data.priority_distribution, data.summary);
             renderMemberTable(data.member_distribution.members);
+            renderDailyFocusChart(data.daily_focus_time);
 
         } catch (err) {
             console.error('Analytics load failure:', err);
@@ -354,6 +385,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const doingEl = document.getElementById('stat-doing-tasks');
         const overdueEl = document.getElementById('stat-overdue-tasks');
         const dueSoonEl = document.getElementById('stat-due-soon-tasks');
+        const focusEl = document.getElementById('stat-focus-time');
+
+        if (focusEl) {
+            focusEl.textContent = summary.formatted_total_focus || '0m';
+        }
 
         if (typeof window.animateCountUp === 'function') {
             window.animateCountUp(totalEl, summary.total, 800);
@@ -697,6 +733,96 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
+     * Chart 4: Daily Focus Time (Bar Chart)
+     */
+    function renderDailyFocusChart(dist) {
+        const ctx = document.getElementById('dailyFocusChart');
+        if (!ctx || typeof Chart === 'undefined' || !dist) return;
+
+        const theme = getThemeStyles();
+        const totalPill = document.getElementById('focus-chart-total-pill');
+        if (totalPill) totalPill.textContent = `${dist.formatted_total || '0m'} total`;
+
+        const canvasCtx = ctx.getContext('2d');
+        const gradient = canvasCtx.createLinearGradient(0, 0, 0, 260);
+        if (theme.isDark) {
+            gradient.addColorStop(0, 'rgba(245, 158, 11, 0.85)');
+            gradient.addColorStop(1, 'rgba(245, 158, 11, 0.15)');
+        } else {
+            gradient.addColorStop(0, 'rgba(245, 158, 11, 0.9)');
+            gradient.addColorStop(1, 'rgba(245, 158, 11, 0.2)');
+        }
+
+        if (focusChart) {
+            focusChart.data.labels = dist.labels;
+            focusChart.data.datasets[0].data = dist.minutes;
+            focusChart.data.datasets[0].backgroundColor = gradient;
+            focusChart.options.scales.x.ticks.color = theme.textMuted;
+            focusChart.options.scales.y.ticks.color = theme.textMuted;
+            focusChart.options.scales.y.grid.color = theme.gridColor;
+            Object.assign(focusChart.options.plugins.tooltip, getCustomTooltipConfig(theme));
+            focusChart.update();
+        } else {
+            focusChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dist.labels,
+                    datasets: [{
+                        label: 'Focus Time (Minutes)',
+                        data: dist.minutes,
+                        backgroundColor: gradient,
+                        borderColor: '#f59e0b',
+                        borderWidth: 1.5,
+                        borderRadius: 6,
+                        borderSkipped: false,
+                        maxBarThickness: 42
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 800,
+                        easing: 'easeOutQuart'
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: Object.assign(getCustomTooltipConfig(theme), {
+                            callbacks: {
+                                label: function(context) {
+                                    const mins = context.raw || 0;
+                                    const h = Math.floor(mins / 60);
+                                    const m = mins % 60;
+                                    const formatted = h > 0 ? `${h}h ${m}m` : `${m} min`;
+                                    return ` Focused: ${formatted}`;
+                                }
+                            }
+                        })
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: {
+                                color: theme.textMuted,
+                                font: { family: "'Plus Jakarta Sans', sans-serif", size: 12, weight: '500' }
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: theme.gridColor },
+                            ticks: {
+                                color: theme.textMuted,
+                                font: { family: "'JetBrains Mono', monospace", size: 11 },
+                                callback: function(val) { return `${val}m`; }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    /**
      * Updates chart styling and color palettes when dark/light mode toggles.
      */
     function handleThemeChange() {
@@ -735,6 +861,27 @@ document.addEventListener('DOMContentLoaded', () => {
             Object.assign(priorityChart.options.plugins.tooltip, tooltipConfig);
             priorityChart.update();
             renderPriorityLegend(cachedPriorityDist, priorityColors);
+        }
+
+        if (focusChart && cachedFocusDist) {
+            const ctx = document.getElementById('dailyFocusChart');
+            if (ctx) {
+                const canvasCtx = ctx.getContext('2d');
+                const gradient = canvasCtx.createLinearGradient(0, 0, 0, 260);
+                if (theme.isDark) {
+                    gradient.addColorStop(0, 'rgba(245, 158, 11, 0.85)');
+                    gradient.addColorStop(1, 'rgba(245, 158, 11, 0.15)');
+                } else {
+                    gradient.addColorStop(0, 'rgba(245, 158, 11, 0.9)');
+                    gradient.addColorStop(1, 'rgba(245, 158, 11, 0.2)');
+                }
+                focusChart.data.datasets[0].backgroundColor = gradient;
+            }
+            focusChart.options.scales.x.ticks.color = theme.textMuted;
+            focusChart.options.scales.y.ticks.color = theme.textMuted;
+            focusChart.options.scales.y.grid.color = theme.gridColor;
+            Object.assign(focusChart.options.plugins.tooltip, tooltipConfig);
+            focusChart.update();
         }
     }
 

@@ -29,6 +29,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
     initQuickAddBar();
+    initFocusTimer();
     initSortableKanban();
     initSortableMatrix();
     initViewModeToggle();
@@ -1639,6 +1640,295 @@ function initQuickAddBar() {
         }
     });
 }
+
+/**
+ * Pomodoro Focus Timer with Start, Pause, Stop, and TimeLog Persistence
+ * - 25-minute countdown session on active task
+ * - Visual circular progress dial & status pills
+ * - Web Audio API synthesized completion chime
+ * - Asynchronously logs session to TimeLog database via POST /api/tasks/<id>/timelog
+ * - Updates task card's total time spent badge in real time without full reload
+ */
+function initFocusTimer() {
+    const modal = document.getElementById('focus-timer-modal');
+    if (!modal) return;
+
+    const modalTitle = document.getElementById('focus-modal-task-title');
+    const display = document.getElementById('focus-time-display');
+    const progressBar = document.getElementById('focus-progress-bar');
+    const statusPill = document.getElementById('focus-status-pill');
+    const hintText = document.getElementById('focus-timer-hint-text');
+
+    const startBtn = document.getElementById('focus-btn-start');
+    const startBtnText = document.getElementById('focus-btn-start-text');
+    const pauseBtn = document.getElementById('focus-btn-pause');
+    const stopBtn = document.getElementById('focus-btn-stop');
+    const closeBtn = document.getElementById('focus-timer-close');
+
+    const TOTAL_SECONDS = 25 * 60; // 25 minutes
+    const CIRCLE_CIRCUMFERENCE = 490; // 2 * PI * 78
+
+    let activeTaskId = null;
+    let activeTaskTitle = '';
+    let remainingSeconds = TOTAL_SECONDS;
+    let timerInterval = null;
+    let timerState = 'idle'; // 'idle', 'running', 'paused', 'finished'
+    let originalDocumentTitle = document.title;
+
+    function formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function updateDisplay() {
+        if (display) {
+            display.textContent = formatTime(remainingSeconds);
+        }
+        if (progressBar) {
+            const fraction = remainingSeconds / TOTAL_SECONDS;
+            const offset = CIRCLE_CIRCUMFERENCE * (1 - fraction);
+            progressBar.style.strokeDashoffset = offset;
+        }
+    }
+
+    function playChime() {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
+            const now = ctx.currentTime;
+            [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.18, now + i * 0.12);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.12 + 0.9);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now + i * 0.12);
+                osc.stop(now + i * 0.12 + 0.9);
+            });
+        } catch (e) {}
+    }
+
+    function openModal(taskId, taskTitle) {
+        activeTaskId = taskId;
+        activeTaskTitle = taskTitle;
+        if (modalTitle) modalTitle.textContent = taskTitle;
+
+        resetTimer();
+        modal.style.display = 'flex';
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+    }
+
+    function closeModal() {
+        if (timerState === 'running') {
+            if (!confirm('A 25-minute focus session is currently in progress. Stop and close?')) {
+                return;
+            }
+        }
+        resetTimer();
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('modal-open');
+        document.title = originalDocumentTitle;
+    }
+
+    function resetTimer() {
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = null;
+        timerState = 'idle';
+        remainingSeconds = TOTAL_SECONDS;
+        updateDisplay();
+
+        if (statusPill) {
+            statusPill.textContent = 'Ready';
+            statusPill.className = 'focus-status-pill';
+        }
+        if (hintText) {
+            hintText.textContent = '💡 Stay focused on this task. Timer logs 25 minutes automatically upon completion.';
+        }
+        if (startBtn) {
+            startBtn.style.display = 'inline-flex';
+            if (startBtnText) startBtnText.textContent = '▶ Start';
+        }
+        if (pauseBtn) pauseBtn.style.display = 'none';
+        if (stopBtn) stopBtn.style.display = 'inline-flex';
+        if (progressBar) progressBar.style.stroke = '#f59e0b';
+        document.title = originalDocumentTitle;
+    }
+
+    function startTimer() {
+        if (timerState === 'finished') {
+            resetTimer();
+        }
+
+        timerState = 'running';
+        if (startBtn) startBtn.style.display = 'none';
+        if (pauseBtn) pauseBtn.style.display = 'inline-flex';
+
+        if (statusPill) {
+            statusPill.textContent = 'Focusing...';
+            statusPill.className = 'focus-status-pill status-running';
+        }
+        if (hintText) {
+            hintText.textContent = '🔥 Deep focus in progress. Keep working!';
+        }
+
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            remainingSeconds--;
+            updateDisplay();
+
+            const timeStr = formatTime(remainingSeconds);
+            document.title = `(${timeStr}) ${activeTaskTitle} • TaskManager`;
+
+            if (remainingSeconds <= 0) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+                onFinished();
+            }
+        }, 1000);
+    }
+
+    function pauseTimer() {
+        if (timerState !== 'running') return;
+        timerState = 'paused';
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = null;
+
+        if (pauseBtn) pauseBtn.style.display = 'none';
+        if (startBtn) {
+            startBtn.style.display = 'inline-flex';
+            if (startBtnText) startBtnText.textContent = '▶ Resume';
+        }
+
+        if (statusPill) {
+            statusPill.textContent = 'Paused';
+            statusPill.className = 'focus-status-pill status-paused';
+        }
+        if (hintText) {
+            hintText.textContent = '⏸ Session paused. Click Resume when you are ready to continue.';
+        }
+        document.title = `[Paused] ${activeTaskTitle} • TaskManager`;
+    }
+
+    async function saveTimeLog(taskId, minutes) {
+        if (!taskId || minutes <= 0) return;
+        try {
+            const response = await fetch(`/api/tasks/${taskId}/timelog`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ duration_minutes: minutes })
+            });
+
+            const data = await response.json();
+            if (response.ok && data.success) {
+                // Update badge on task card
+                updateCardTimeBadge(taskId, data.formatted_focus_time);
+                if (typeof showToast === 'function') {
+                    showToast(`⏱️ ${data.message || `${minutes}m logged successfully!`}`, 'success');
+                }
+            } else {
+                if (typeof showToast === 'function') {
+                    showToast(data.error || 'Failed to save focus time log.', 'error');
+                }
+            }
+        } catch (err) {
+            console.error('Error saving focus timelog:', err);
+        }
+    }
+
+    function updateCardTimeBadge(taskId, formattedTime) {
+        const badge = document.getElementById(`task-time-spent-${taskId}`);
+        if (badge) {
+            const valSpan = badge.querySelector('.time-spent-val');
+            if (valSpan) valSpan.textContent = formattedTime;
+            badge.style.display = 'inline-flex';
+        }
+    }
+
+    function onFinished() {
+        timerState = 'finished';
+        playChime();
+
+        if (statusPill) {
+            statusPill.textContent = 'Completed! 🎉';
+            statusPill.className = 'focus-status-pill status-completed';
+        }
+        if (progressBar) {
+            progressBar.style.stroke = '#10b981';
+        }
+        if (hintText) {
+            hintText.textContent = '🎉 Excellent job! 25 minutes logged on this task. Take a 5-minute break!';
+        }
+
+        if (pauseBtn) pauseBtn.style.display = 'none';
+        if (startBtn) {
+            startBtn.style.display = 'inline-flex';
+            if (startBtnText) startBtnText.textContent = '↻ Start Another (25m)';
+        }
+
+        document.title = `🎉 Done! ${activeTaskTitle} • TaskManager`;
+
+        // Save 25 minutes to TimeLog
+        saveTimeLog(activeTaskId, 25);
+    }
+
+    function stopTimer() {
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = null;
+
+        if (remainingSeconds < TOTAL_SECONDS && timerState !== 'finished') {
+            const elapsed = TOTAL_SECONDS - remainingSeconds;
+            const elapsedMinutes = Math.floor(elapsed / 60);
+
+            if (elapsedMinutes >= 1) {
+                if (confirm(`You completed ${elapsedMinutes} minute(s) of focus. Save this time to the task?`)) {
+                    saveTimeLog(activeTaskId, elapsedMinutes);
+                }
+            }
+        }
+
+        resetTimer();
+        closeModal();
+    }
+
+    // Attach event listeners for timer modal buttons
+    if (startBtn) startBtn.addEventListener('click', startTimer);
+    if (pauseBtn) pauseBtn.addEventListener('click', pauseTimer);
+    if (stopBtn) stopBtn.addEventListener('click', stopTimer);
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.style.display !== 'none') {
+            closeModal();
+        }
+    });
+
+    // Delegated click handler for "Start focus" buttons across task cards
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-start-focus');
+        if (btn) {
+            e.preventDefault();
+            e.stopPropagation();
+            const taskId = btn.dataset.taskId;
+            const taskTitle = btn.dataset.taskTitle || 'Task Focus';
+            openModal(taskId, taskTitle);
+        }
+    });
+}
+
 
 
 

@@ -56,6 +56,11 @@ Features:
                     ⏳ Due &lt;48h
                 </span>
             {% endif %}
+
+            <!-- Total Focus Time Spent Badge -->
+            <span class="badge badge-time-spent" id="task-time-spent-{{ task.id }}" title="Total focus time spent on this task" {% if task.total_focus_minutes == 0 %}style="display:none;"{% endif %}>
+                ⏱️ <span class="time-spent-val">{{ task.formatted_focus_time }}</span>
+            </span>
         </div>
 
         <div class="card-controls">
@@ -97,6 +102,14 @@ Features:
                 {% endfor %}
             </select>
         </div>
+    </div>
+
+    <!-- Focus Mode Action Row -->
+    <div class="card-focus-action">
+        <button type="button" class="btn-start-focus" data-task-id="{{ task.id }}" data-task-title="{{ task.title }}" title="Start 25-minute focus session">
+            <span class="focus-btn-icon">⏱️</span>
+            <span class="focus-btn-text">Start focus</span>
+        </button>
     </div>
 
     <!-- Bottom Action Bar: Move to Other Statuses (Accessible click fallback) -->

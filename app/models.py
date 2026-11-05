@@ -74,6 +74,15 @@ class User(db.Model, UserMixin):
         foreign_keys='ActivityLog.user_id'
     )
 
+    # Relationship to focus sessions logged by this user
+    time_logs = db.relationship(
+        'TimeLog',
+        backref=db.backref('user', lazy='joined'),
+        lazy='dynamic',
+        cascade='all, delete-orphan',
+        foreign_keys='TimeLog.user_id'
+    )
+
     def set_password(self, password: str) -> None:
         """
         Hash the given plain-text password using Werkzeug's secure hashing algorithm.
@@ -169,6 +178,38 @@ class Task(db.Model):
         foreign_keys='ActivityLog.task_id'
     )
 
+    # Focus time logs recorded for this task
+    time_logs = db.relationship(
+        'TimeLog',
+        backref=db.backref('task', lazy='joined'),
+        lazy='dynamic',
+        cascade='all, delete-orphan',
+        foreign_keys='TimeLog.task_id'
+    )
+
+    @property
+    def total_focus_minutes(self) -> int:
+        """
+        Calculates total focus minutes logged for this task.
+        """
+        return sum(log.duration_minutes for log in self.time_logs)
+
+    @property
+    def formatted_focus_time(self) -> str:
+        """
+        Formats total focus minutes nicely (e.g. '25m', '1h 15m', or '0m').
+        """
+        total = self.total_focus_minutes
+        if total == 0:
+            return "0m"
+        hours = total // 60
+        mins = total % 60
+        if hours > 0 and mins > 0:
+            return f"{hours}h {mins}m"
+        elif hours > 0:
+            return f"{hours}h"
+        return f"{mins}m"
+
     @property
     def is_overdue(self) -> bool:
         """
@@ -248,7 +289,9 @@ class Task(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'is_overdue': self.is_overdue,
             'is_due_soon': self.is_due_soon,
-            'due_urgency': self.due_urgency
+            'due_urgency': self.due_urgency,
+            'total_focus_minutes': self.total_focus_minutes,
+            'formatted_focus_time': self.formatted_focus_time
         }
 
     def __repr__(self) -> str:
@@ -309,3 +352,54 @@ class ActivityLog(db.Model):
 
     def __repr__(self) -> str:
         return f"<ActivityLog id={self.id} action='{self.action}' at='{self.timestamp}'>"
+
+
+class TimeLog(db.Model):
+    """
+    TimeLog Model
+    --------------
+    Stores focused working sessions recorded for tasks by users.
+
+    Attributes:
+        id (int): Primary key.
+        task_id (int): Foreign key to 'tasks.id'.
+        user_id (int): Foreign key to 'users.id'.
+        duration_minutes (int): Number of minutes spent in the focus session.
+        created_at (datetime): Timestamp when the session was completed/logged.
+    """
+    __tablename__ = 'time_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    task_id = db.Column(
+        db.Integer,
+        db.ForeignKey('tasks.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey('users.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
+
+    duration_minutes = db.Column(db.Integer, default=25, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'task_title': self.task.title if self.task else None,
+            'user_id': self.user_id,
+            'user_name': self.user.name if self.user else 'Unknown',
+            'duration_minutes': self.duration_minutes,
+            'created_at': self.created_at.isoformat()
+        }
+
+    def __repr__(self) -> str:
+        return f"<TimeLog id={self.id} task_id={self.task_id} user_id={self.user_id} duration={self.duration_minutes}m>"
+

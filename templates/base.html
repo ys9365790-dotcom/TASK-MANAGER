@@ -225,6 +225,56 @@ and asset links for the TaskManager web application.
         </div>
     </div>
 
+    <!-- Focus Timer Modal (Pomodoro 25-minute timer) -->
+    <div id="focus-timer-modal" class="modal-backdrop focus-timer-backdrop" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="focus-modal-task-title" style="display: none;">
+        <div class="modal-dialog focus-timer-dialog">
+            <div class="modal-content focus-timer-content">
+                <div class="focus-timer-header">
+                    <div class="focus-header-badge">
+                        <span class="focus-badge-pulse"></span>
+                        <span class="focus-badge-text">Pomodoro Focus</span>
+                    </div>
+                    <button type="button" class="modal-close-btn" id="focus-timer-close" aria-label="Close focus timer">&times;</button>
+                </div>
+                
+                <div class="focus-timer-body">
+                    <h3 id="focus-modal-task-title" class="focus-task-title">Task Title</h3>
+                    <p class="focus-task-subtitle text-muted">25-minute dedicated focus session</p>
+
+                    <!-- Circular Progress Timer -->
+                    <div class="focus-timer-display-wrap">
+                        <div class="focus-timer-circle">
+                            <svg class="focus-progress-svg" viewBox="0 0 180 180">
+                                <circle class="focus-progress-bg" cx="90" cy="90" r="78" />
+                                <circle class="focus-progress-bar" id="focus-progress-bar" cx="90" cy="90" r="78" />
+                            </svg>
+                            <div class="focus-timer-clock">
+                                <span class="focus-time-digits" id="focus-time-display">25:00</span>
+                                <span class="focus-status-pill" id="focus-status-pill">Ready</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="focus-timer-hint">
+                        <span id="focus-timer-hint-text">💡 Stay focused on this task. Timer logs 25 minutes automatically upon completion.</span>
+                    </div>
+                </div>
+
+                <div class="focus-timer-footer">
+                    <button type="button" class="btn btn-outline focus-btn-stop" id="focus-btn-stop" title="Stop and reset session">
+                        <span>⏹ Stop</span>
+                    </button>
+                    <button type="button" class="btn btn-secondary focus-btn-pause" id="focus-btn-pause" style="display: none;" title="Pause countdown">
+                        <span>⏸ Pause</span>
+                    </button>
+                    <button type="button" class="btn btn-primary focus-btn-start" id="focus-btn-start" title="Start 25-minute focus countdown">
+                        <span id="focus-btn-start-text">▶ Start</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Footer -->
     <footer class="footer">
         <div class="footer-container">
