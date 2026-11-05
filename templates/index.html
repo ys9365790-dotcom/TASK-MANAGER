@@ -143,6 +143,108 @@ Features:
         </form>
     </div>
 
+    <!-- Team Workload Reassignment Suggestion Banner (Visible when >1.5x imbalance detected) -->
+    {% if workload_summary and workload_summary.has_overloaded %}
+        <div class="workload-alert-banner" id="workload-board-alert">
+            <div class="workload-alert-content">
+                <span class="workload-alert-icon">⚖️</span>
+                <div class="workload-alert-text">
+                    <strong>Team Workload Alert:</strong>
+                    {{ workload_summary.reassign_suggestions[0].message }}
+                </div>
+            </div>
+            <div class="workload-alert-actions">
+                <a href="{{ url_for('main.dashboard_view') }}#team-workload-section" class="btn btn-sm btn-outline-warning">
+                    👥 View Workload Chart
+                </a>
+            </div>
+        </div>
+    {% endif %}
+
+    <!-- "Next Up" Top 5 Priority Tasks Panel (Scored by Priority + Importance + Due Date + Overdue) -->
+    <div class="next-up-card" id="next-up-card">
+        <div class="next-up-header">
+            <div class="next-up-title-area">
+                <div class="next-up-badge">
+                    <span class="next-up-badge-icon">⚡</span>
+                    <span>Next Up</span>
+                </div>
+                <div class="next-up-headings">
+                    <h3 class="next-up-title">Top 5 Priority Tasks for {{ current_user.name }}</h3>
+                    <p class="next-up-subtitle text-muted">
+                        Ranked dynamically using score formula: <code class="formula-code">priority weight + importance weight + days until due + overdue bonus</code>
+                    </p>
+                </div>
+            </div>
+            <div class="next-up-meta-pill" title="Formula breakdown: High=40/Med=20/Low=5 + Important=30 + Due proximity (up to 30) + Overdue bonus (35-60)">
+                <span class="formula-pill-icon">🎯</span>
+                <span class="formula-pill-text">Smart Priority Engine</span>
+            </div>
+        </div>
+
+        <div class="next-up-list" id="next-up-list">
+            {% if next_up_tasks %}
+                {% for task in next_up_tasks %}
+                    <div class="next-up-row rank-{{ loop.index }}" data-task-id="{{ task.id }}">
+                        <div class="next-up-rank" title="Rank #{{ loop.index }}">
+                            <span class="rank-number">#{{ loop.index }}</span>
+                        </div>
+                        <div class="next-up-content">
+                            <div class="next-up-badges-row">
+                                <span class="badge badge-priority badge-{{ task.priority }} badge-sm">
+                                    <span class="priority-dot priority-dot-{{ task.priority }}"></span>
+                                    {{ task.priority|capitalize }}
+                                </span>
+                                {% if task.important %}
+                                    <span class="badge badge-important badge-sm">⭐ Important</span>
+                                {% endif %}
+                                {% if task.is_overdue %}
+                                    <span class="badge badge-urgency badge-overdue badge-sm">⏰ Overdue</span>
+                                {% elif task.is_due_soon %}
+                                    <span class="badge badge-urgency badge-due-soon badge-sm">⏳ Due &lt;48h</span>
+                                {% endif %}
+                                <span class="badge badge-score badge-sm" title="Score: {{ task.score }} pts (Prio: {{ task.score_breakdown.priority_weight }} + Imp: {{ task.score_breakdown.importance_weight }} + Due: {{ task.score_breakdown.due_date_weight }} + Overdue: {{ task.score_breakdown.overdue_bonus }})">
+                                    🎯 {{ task.score }} pts
+                                </span>
+                                <span class="badge badge-status badge-{{ task.status }} badge-sm">{{ task.status|capitalize }}</span>
+                            </div>
+                            <div class="next-up-title-row">
+                                <a href="{{ url_for('main.edit_task', task_id=task.id) }}" class="next-up-task-link" title="{{ task.title }}">
+                                    {{ task.title }}
+                                </a>
+                            </div>
+                            <div class="next-up-meta-row">
+                                {% if task.due_date %}
+                                    <span class="next-up-meta-due {% if task.is_overdue %}text-danger{% elif task.is_due_soon %}text-warning{% endif %}">
+                                        📅 Due {{ task.due_date.strftime('%a, %b %d') }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted">📅 No due date</span>
+                                {% endif %}
+                                {% if task.assignee %}
+                                    <span class="next-up-meta-assignee">👤 {{ task.assignee.name }}</span>
+                                {% endif %}
+                                {% if task.total_focus_minutes > 0 %}
+                                    <span class="next-up-meta-time">⏱️ {{ task.formatted_focus_time }} focused</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="next-up-actions">
+                            <button type="button" class="btn btn-sm btn-start-focus btn-next-up-focus" data-task-id="{{ task.id }}" data-task-title="{{ task.title }}" title="Start 25-minute Pomodoro focus session">
+                                ⏱️ Start Focus
+                            </button>
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div class="next-up-empty-state">
+                    <span class="empty-icon">🎉</span>
+                    <p>No active tasks in your queue! You're completely caught up, or create a new task above.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
     <!-- Filter and Search Toolbar + Board View Mode Toggle (Client-Side) -->
     <div class="toolbar-card">
         <div class="filter-toolbar">

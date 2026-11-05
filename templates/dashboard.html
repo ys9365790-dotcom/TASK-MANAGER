@@ -156,13 +156,50 @@ Automatically reacts to Dark/Light mode theme changes in real time.
             </div>
         </div>
 
-        <!-- Table: Team Member Workload Summary -->
-        <div class="chart-card col-table">
+        <!-- Table: Team Member Workload View & Reassignment Balancer -->
+        <div class="chart-card col-table" id="team-workload-section">
             <div class="chart-card-header">
                 <div class="chart-title">
-                    <h3>👥 Team Member Breakdown</h3>
-                    <p class="text-muted">Granular task allocation and progress per registered member.</p>
+                    <h3>👥 Team Member Workload View</h3>
+                    <p class="text-muted">Task allocation bars with automatic overload detection (&gt;1.5x team average) and reassignment suggestions.</p>
                 </div>
+                <div class="workload-kpi-pills">
+                    <span class="badge badge-outline" title="Average tasks per registered team member">
+                        Avg: <strong id="workload-team-avg">{{ workload_summary.team_average if workload_summary else '0' }}</strong> tasks
+                    </span>
+                    <span class="badge badge-warning" title="Flag threshold: >1.5x team average">
+                        Overload: <strong id="workload-threshold">&gt;{{ workload_summary.overload_threshold if workload_summary else '0' }}</strong> tasks
+                    </span>
+                </div>
+            </div>
+
+            <!-- Dynamic Reassignment Suggestion Box -->
+            <div id="workload-suggestions-box" class="workload-suggestions-container">
+                {% if workload_summary and workload_summary.has_overloaded %}
+                    <div class="alert alert-warning workload-alert">
+                        <div class="alert-icon">⚠️</div>
+                        <div class="alert-content">
+                            <strong>Workload Imbalance Detected:</strong>
+                            <p class="mb-1 text-muted">The following members carry more than 1.5x the team average ({{ workload_summary.team_average }} tasks):</p>
+                            <ul class="suggestion-list">
+                                {% for s in workload_summary.reassign_suggestions %}
+                                    <li>
+                                        {{ s.message }}
+                                        <a href="{{ url_for('main.index', user_id=s.overloaded_user_id) }}" class="btn-link">View {{ s.overloaded_user }}'s tasks &rarr;</a>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="alert alert-success workload-alert">
+                        <div class="alert-icon">✅</div>
+                        <div class="alert-content">
+                            <strong>Workload is Balanced:</strong>
+                            <span>All registered team members are within 1.5x of the team average ({{ workload_summary.team_average if workload_summary else 0 }} tasks). No reassignments required.</span>
+                        </div>
+                    </div>
+                {% endif %}
             </div>
 
             <div class="table-responsive">
@@ -170,16 +207,18 @@ Automatically reacts to Dark/Light mode theme changes in real time.
                     <thead>
                         <tr>
                             <th>Member</th>
-                            <th>Total Tasks</th>
+                            <th style="min-width: 140px;">Workload Bar</th>
+                            <th>Total</th>
                             <th>To Do</th>
                             <th>Doing</th>
                             <th>Done</th>
-                            <th>Status</th>
+                            <th>Workload Status</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody id="member-table-body">
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-4">Loading team statistics...</td>
+                            <td colspan="8" class="text-center text-muted py-4">Loading team statistics...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -361,7 +400,8 @@ document.addEventListener('DOMContentLoaded', () => {
             renderStatusDoughnut(data.status_distribution, data.summary);
             renderMemberBarChart(data.member_distribution);
             renderPriorityDoughnut(data.priority_distribution, data.summary);
-            renderMemberTable(data.member_distribution.members);
+            renderMemberTable(data.member_distribution.members, data.workload_summary);
+            renderWorkloadSuggestions(data.workload_summary);
             renderDailyFocusChart(data.daily_focus_time);
 
         } catch (err) {
@@ -695,41 +735,122 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Workload Table per Team Member
+     * Workload Table per Team Member with Visual Bars and Overload Flags
      */
-    function renderMemberTable(members) {
+    function renderMemberTable(members, workloadSummary) {
         const tbody = document.getElementById('member-table-body');
         if (!tbody || !members) return;
 
         if (members.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">No team member records available.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">No team member records available.</td></tr>`;
             return;
         }
 
+        const teamAvg = workloadSummary ? workloadSummary.team_average : 0;
+
         tbody.innerHTML = members.map(m => {
             const initials = m.name ? m.name.substring(0, 2).toUpperCase() : '??';
-            const loadClass = m.total > 4 ? 'badge-high' : m.total > 0 ? 'badge-medium' : 'badge-low';
-            const loadText = m.total > 4 ? 'Heavy Load' : m.total > 0 ? 'Active' : 'Available';
+            const isOverloaded = Boolean(m.is_overloaded);
+            const barPct = m.bar_percentage !== undefined ? m.bar_percentage : Math.min(100, m.total * 15);
+
+            let statusBadge = '';
+            if (isOverloaded) {
+                statusBadge = `<span class="badge badge-overloaded" title="${m.name} has ${m.total} tasks, exceeding 1.5x the team average of ${teamAvg}">⚠️ Overloaded (&gt;1.5x)</span>`;
+            } else if (m.total === 0) {
+                statusBadge = `<span class="badge badge-available">🟢 Available</span>`;
+            } else if (teamAvg > 0 && m.total < teamAvg) {
+                statusBadge = `<span class="badge badge-capacity">🟢 Has Capacity</span>`;
+            } else {
+                statusBadge = `<span class="badge badge-balanced">✅ Balanced</span>`;
+            }
+
+            const actionBtn = isOverloaded && m.user_id ? `
+                <a href="/?user_id=${m.user_id}" class="btn btn-xs btn-outline-warning" title="View ${m.name}'s tasks on the Board to reassign">
+                    Reassign &rarr;
+                </a>
+            ` : (m.user_id ? `
+                <a href="/?user_id=${m.user_id}" class="btn btn-xs btn-outline-secondary" title="Filter Board for this member">
+                    Filter
+                </a>
+            ` : '<span class="text-muted">-</span>');
+
+            const barFillClass = isOverloaded ? 'bar-fill-overloaded' : 'bar-fill-normal';
 
             return `
-                <tr>
+                <tr class="${isOverloaded ? 'row-overloaded' : ''}">
                     <td>
                         <div class="member-cell">
-                            <span class="avatar-circle avatar-sm">${initials}</span>
+                            <span class="avatar-circle avatar-sm ${isOverloaded ? 'avatar-overloaded' : ''}">${initials}</span>
                             <div class="member-name-group">
                                 <strong>${m.name}</strong>
                                 ${m.email ? `<small class="text-muted">${m.email}</small>` : ''}
                             </div>
                         </div>
                     </td>
-                    <td><strong class="text-main">${m.total}</strong></td>
+                    <td class="col-workload-bar">
+                        <div class="workload-bar-wrapper">
+                            <div class="workload-bar-track">
+                                <div class="workload-bar-fill ${barFillClass}" style="width: ${barPct}%;"></div>
+                            </div>
+                            <span class="workload-bar-num">${m.total} task${m.total === 1 ? '' : 's'}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <strong class="text-main">${m.total}</strong>
+                        ${m.overload_ratio && m.user_id ? `<small class="ratio-label text-muted">(${m.overload_ratio}x)</small>` : ''}
+                    </td>
                     <td><span class="badge badge-sm badge-todo">${m.todo}</span></td>
                     <td><span class="badge badge-sm badge-doing">${m.doing}</span></td>
                     <td><span class="badge badge-sm badge-done">${m.done}</span></td>
-                    <td><span class="badge ${loadClass}">${loadText}</span></td>
+                    <td>${statusBadge}</td>
+                    <td>${actionBtn}</td>
                 </tr>
             `;
         }).join('');
+    }
+
+    /**
+     * Updates the dynamic workload balancer suggestions box and KPI badges
+     */
+    function renderWorkloadSuggestions(workloadSummary) {
+        const box = document.getElementById('workload-suggestions-box');
+        const avgEl = document.getElementById('workload-team-avg');
+        const threshEl = document.getElementById('workload-threshold');
+
+        if (avgEl && workloadSummary) avgEl.textContent = `${workloadSummary.team_average}`;
+        if (threshEl && workloadSummary) threshEl.textContent = `>${workloadSummary.overload_threshold}`;
+
+        if (!box || !workloadSummary) return;
+
+        if (workloadSummary.has_overloaded && Array.isArray(workloadSummary.reassign_suggestions) && workloadSummary.reassign_suggestions.length > 0) {
+            box.innerHTML = `
+                <div class="alert alert-warning workload-alert">
+                    <div class="alert-icon">⚠️</div>
+                    <div class="alert-content">
+                        <strong>Workload Imbalance Detected:</strong>
+                        <p class="mb-1 text-muted">The following members carry more than 1.5x the team average (${workloadSummary.team_average} tasks):</p>
+                        <ul class="suggestion-list">
+                            ${workloadSummary.reassign_suggestions.map(s => `
+                                <li>
+                                    ${s.message}
+                                    <a href="/?user_id=${s.overloaded_user_id}" class="btn-link">View ${s.overloaded_user}'s tasks &rarr;</a>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                </div>
+            `;
+        } else {
+            box.innerHTML = `
+                <div class="alert alert-success workload-alert">
+                    <div class="alert-icon">✅</div>
+                    <div class="alert-content">
+                        <strong>Workload is Balanced:</strong>
+                        <span>All active team members are within standard workload capacity (&le; 1.5x team average of ${workloadSummary ? workloadSummary.team_average : 0} tasks). No reassignments required.</span>
+                    </div>
+                </div>
+            `;
+        }
     }
 
     /**

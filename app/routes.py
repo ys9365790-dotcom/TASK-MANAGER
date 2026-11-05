@@ -23,7 +23,7 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from app import db
-from app.models import User, Task, ActivityLog, TaskChange, record_task_change
+from app.models import User, Task, ActivityLog, TaskChange, record_task_change, calculate_workload_summary
 
 # Define the main Blueprint
 main_bp = Blueprint('main', __name__)
@@ -263,6 +263,20 @@ def index():
         'q4': len(q4_tasks)
     }
 
+    # Calculate top 5 "Next up" tasks for current_user based on the priority scoring formula:
+    # priority weight + importance weight + days until due + overdue bonus
+    user_active_tasks = [t for t in all_tasks if t.assigned_to == current_user.id and t.status != 'done']
+    user_active_tasks.sort(key=lambda t: t.score, reverse=True)
+    next_up_tasks = user_active_tasks[:5]
+
+    if len(next_up_tasks) < 5:
+        other_active_tasks = [t for t in all_tasks if t.status != 'done' and t not in next_up_tasks]
+        other_active_tasks.sort(key=lambda t: t.score, reverse=True)
+        next_up_tasks.extend(other_active_tasks[:(5 - len(next_up_tasks))])
+
+    # Calculate workload analysis & reassignment suggestions
+    workload_summary = calculate_workload_summary(all_tasks, users)
+
     return render_template(
         'index.html',
         todo_tasks=todo_tasks,
@@ -275,6 +289,8 @@ def index():
         users=users,
         recent_activity=recent_activity,
         metrics=metrics,
+        next_up_tasks=next_up_tasks,
+        workload_summary=workload_summary,
         selected_user_id=selected_user_id,
         selected_priority=selected_priority,
         search_query=search_query
@@ -696,7 +712,10 @@ def dashboard_view():
     tasks per member bar, priority breakdown) and productivity metrics.
     Data is loaded asynchronously from the /api/analytics endpoint.
     """
-    return render_template('dashboard.html')
+    all_tasks = Task.query.all()
+    all_users = User.query.order_by(User.name.asc()).all()
+    workload_summary = calculate_workload_summary(all_tasks, all_users)
+    return render_template('dashboard.html', workload_summary=workload_summary)
 
 
 @main_bp.route('/seed-demo-data')

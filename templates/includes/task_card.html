@@ -27,6 +27,7 @@ Features:
     data-due-date="{{ task.due_date.isoformat() if task.due_date else '' }}"
     data-is-overdue="{{ 'true' if task.is_overdue else 'false' }}"
     data-is-due-soon="{{ 'true' if task.is_due_soon else 'false' }}"
+    data-score="{{ task.score }}"
 >
     <!-- Top Row: Drag Handle, Priority Badge, Important Badge, Due Urgency, and Controls -->
     <div class="card-top">
@@ -43,6 +44,13 @@ Features:
             {% if task.important %}
                 <span class="badge badge-important" title="Important (Eisenhower Matrix)">
                     ⭐ Important
+                </span>
+            {% endif %}
+
+            <!-- Priority Urgency Score Badge -->
+            {% if task.status != 'done' %}
+                <span class="badge badge-score" title="Score: {{ task.score }} pts (Priority: {{ task.score_breakdown.priority_weight }} + Important: {{ task.score_breakdown.importance_weight }} + Due: {{ task.score_breakdown.due_date_weight }} + Overdue: {{ task.score_breakdown.overdue_bonus }})">
+                    🎯 <span class="score-val">{{ task.score }}</span>
                 </span>
             {% endif %}
 

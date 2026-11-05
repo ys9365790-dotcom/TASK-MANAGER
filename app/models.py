@@ -269,6 +269,63 @@ class Task(db.Model):
             return 'due-soon'
         return 'normal'
 
+    @property
+    def score_breakdown(self) -> dict:
+        """
+        Calculates the task priority score and breakdown using the formula:
+        priority weight + importance weight + days until due + overdue bonus
+        """
+        if self.status == 'done':
+            return {
+                'total': 0,
+                'priority_weight': 0,
+                'importance_weight': 0,
+                'due_date_weight': 0,
+                'overdue_bonus': 0
+            }
+
+        # 1. Priority Weight (High: 40, Medium: 20, Low: 5)
+        prio_weights = {'high': 40, 'medium': 20, 'low': 5}
+        prio_weight = prio_weights.get(self.priority, 20)
+
+        # 2. Importance Weight (Important: 30, Normal: 0)
+        imp_weight = 30 if self.important else 0
+
+        # 3. Days Until Due & 4. Overdue Bonus
+        due_weight = 0
+        overdue_bonus = 0
+
+        if self.due_date:
+            diff_days = (self.due_date - date.today()).days
+            if diff_days < 0:
+                # Task is past deadline (Overdue)
+                overdue_days = abs(diff_days)
+                overdue_bonus = 35 + min(25, overdue_days * 3)
+                due_weight = 30  # Maximum due urgency
+            else:
+                # Closer to due date gives higher score:
+                # Due today (0 days) = 30 pts, due tomorrow (1 day) = 27 pts, etc.
+                due_weight = max(0, 30 - diff_days * 3)
+        else:
+            # Baseline score for tasks without deadline
+            due_weight = 5
+
+        total_score = prio_weight + imp_weight + due_weight + overdue_bonus
+        return {
+            'total': int(total_score),
+            'priority_weight': prio_weight,
+            'importance_weight': imp_weight,
+            'due_date_weight': due_weight,
+            'overdue_bonus': overdue_bonus
+        }
+
+    @property
+    def score(self) -> int:
+        """
+        Overall task priority/urgency score.
+        """
+        return self.score_breakdown['total']
+
     def to_dict(self) -> dict:
         """
         Serialize task data into a JSON-friendly dictionary.
@@ -292,7 +349,9 @@ class Task(db.Model):
             'is_due_soon': self.is_due_soon,
             'due_urgency': self.due_urgency,
             'total_focus_minutes': self.total_focus_minutes,
-            'formatted_focus_time': self.formatted_focus_time
+            'formatted_focus_time': self.formatted_focus_time,
+            'score': self.score,
+            'score_breakdown': self.score_breakdown
         }
 
     def __repr__(self) -> str:
@@ -487,6 +546,116 @@ def record_task_change(task, action: str, user_name: str = None, user_id: int = 
     except Exception:
         db.session.rollback()
         return None
+
+
+def calculate_workload_summary(all_tasks, all_users) -> dict:
+    """
+    Computes team member task workload distribution, identifies overloaded members
+    exceeding 1.5x the team average, and generates actionable reassignment suggestions.
+
+    Args:
+        all_tasks (list): Collection of Task objects.
+        all_users (list): Collection of User objects.
+
+    Returns:
+        dict: Containing team_average, overload_threshold, member details with progress
+              bar percentages, overload flags, and concrete reassignment suggestions.
+    """
+    member_details = []
+
+    for user in all_users:
+        user_tasks = [t for t in all_tasks if t.assigned_to == user.id]
+        member_details.append({
+            'user_id': user.id,
+            'name': user.name,
+            'email': user.email,
+            'total': len(user_tasks),
+            'todo': sum(1 for t in user_tasks if t.status == 'todo'),
+            'doing': sum(1 for t in user_tasks if t.status == 'doing'),
+            'done': sum(1 for t in user_tasks if t.status == 'done')
+        })
+
+    # Include unassigned tasks in distribution
+    unassigned_tasks = [t for t in all_tasks if t.assigned_to is None]
+    if unassigned_tasks or len(all_users) == 0:
+        member_details.append({
+            'user_id': None,
+            'name': 'Unassigned',
+            'email': '',
+            'total': len(unassigned_tasks),
+            'todo': sum(1 for t in unassigned_tasks if t.status == 'todo'),
+            'doing': sum(1 for t in unassigned_tasks if t.status == 'doing'),
+            'done': sum(1 for t in unassigned_tasks if t.status == 'done')
+        })
+
+    # Calculate team average among registered members
+    registered_members = [m for m in member_details if m['user_id'] is not None]
+    num_registered = len(registered_members)
+    total_assigned_tasks = sum(m['total'] for m in registered_members)
+
+    if num_registered > 0:
+        team_average = round(total_assigned_tasks / num_registered, 1)
+        overload_threshold = round(team_average * 1.5, 1)
+    else:
+        team_average = 0.0
+        overload_threshold = 0.0
+
+    max_member_tasks = max([m['total'] for m in member_details] or [1])
+    if max_member_tasks == 0:
+        max_member_tasks = 1
+
+    overloaded_members = []
+    underloaded_members = []
+
+    for m in member_details:
+        m['bar_percentage'] = min(100, int((m['total'] / max_member_tasks) * 100))
+        # Flag condition: strictly more than 1.5x the team average
+        if m['user_id'] is not None and num_registered > 1 and m['total'] > overload_threshold and m['total'] > 0:
+            m['is_overloaded'] = True
+            m['overload_ratio'] = round(m['total'] / team_average, 1) if team_average > 0 else 1.0
+            overloaded_members.append(m)
+        else:
+            m['is_overloaded'] = False
+            m['overload_ratio'] = round(m['total'] / team_average, 1) if team_average > 0 else 1.0
+            if m['user_id'] is not None:
+                underloaded_members.append(m)
+
+    # Sort underloaded members by lowest task count (prime candidates to take reassigned tasks)
+    underloaded_members.sort(key=lambda x: x['total'])
+
+    reassign_suggestions = []
+    for overloaded in overloaded_members:
+        excess_tasks = max(1, int(round(overloaded['total'] - team_average)))
+        candidate_names = [u['name'] for u in underloaded_members if u['total'] < team_average]
+        if not candidate_names and underloaded_members:
+            candidate_names = [underloaded_members[0]['name']]
+
+        if candidate_names:
+            recipients_str = " or ".join(candidate_names[:2])
+            msg = f"{overloaded['name']} is carrying {overloaded['total']} tasks ({overloaded['overload_ratio']}x team average of {team_average}). Recommend reassigning {excess_tasks} task{'s' if excess_tasks > 1 else ''} to {recipients_str}."
+        else:
+            msg = f"{overloaded['name']} is carrying {overloaded['total']} tasks ({overloaded['overload_ratio']}x team average of {team_average}). Recommend distributing {excess_tasks} task{'s' if excess_tasks > 1 else ''} across the team."
+
+        reassign_suggestions.append({
+            'overloaded_user': overloaded['name'],
+            'overloaded_user_id': overloaded['user_id'],
+            'task_count': overloaded['total'],
+            'excess_tasks': excess_tasks,
+            'overload_ratio': overloaded['overload_ratio'],
+            'suggested_recipients': candidate_names[:2],
+            'message': msg
+        })
+
+    return {
+        'team_average': team_average,
+        'overload_threshold': overload_threshold,
+        'has_overloaded': len(overloaded_members) > 0,
+        'overloaded_count': len(overloaded_members),
+        'overloaded_members': [m['name'] for m in overloaded_members],
+        'reassign_suggestions': reassign_suggestions,
+        'members': member_details
+    }
+
 
 
 

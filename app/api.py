@@ -20,7 +20,7 @@ from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify
 from flask_login import current_user
 from app import db
-from app.models import Task, User, ActivityLog, TimeLog, TaskChange, record_task_change
+from app.models import Task, User, ActivityLog, TimeLog, TaskChange, record_task_change, calculate_workload_summary
 
 # Define the REST API Blueprint with URL prefix '/api'
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -712,39 +712,11 @@ def api_get_analytics():
         'colors': ['#3b82f6', '#8b5cf6', '#10b981']
     }
 
-    # Tasks per member (Bar chart)
-    member_labels = []
-    member_counts = []
-    member_details = []
-
-    for user in all_users:
-        user_tasks = [t for t in all_tasks if t.assigned_to == user.id]
-        member_labels.append(user.name)
-        member_counts.append(len(user_tasks))
-        member_details.append({
-            'user_id': user.id,
-            'name': user.name,
-            'email': user.email,
-            'total': len(user_tasks),
-            'todo': sum(1 for t in user_tasks if t.status == 'todo'),
-            'doing': sum(1 for t in user_tasks if t.status == 'doing'),
-            'done': sum(1 for t in user_tasks if t.status == 'done')
-        })
-
-    # Include unassigned tasks in member distribution
-    unassigned_tasks = [t for t in all_tasks if t.assigned_to is None]
-    if unassigned_tasks or len(all_users) == 0:
-        member_labels.append('Unassigned')
-        member_counts.append(len(unassigned_tasks))
-        member_details.append({
-            'user_id': None,
-            'name': 'Unassigned',
-            'email': '',
-            'total': len(unassigned_tasks),
-            'todo': sum(1 for t in unassigned_tasks if t.status == 'todo'),
-            'doing': sum(1 for t in unassigned_tasks if t.status == 'doing'),
-            'done': sum(1 for t in unassigned_tasks if t.status == 'done')
-        })
+    # Tasks per member and comprehensive Workload Analysis
+    workload_summary = calculate_workload_summary(all_tasks, all_users)
+    member_labels = [m['name'] for m in workload_summary['members']]
+    member_counts = [m['total'] for m in workload_summary['members']]
+    member_details = workload_summary['members']
 
     # Priority breakdown
     high_prio = sum(1 for t in all_tasks if t.priority == 'high')
@@ -817,7 +789,8 @@ def api_get_analytics():
             'members': member_details
         },
         'priority_distribution': priority_distribution,
-        'daily_focus_time': daily_focus_time
+        'daily_focus_time': daily_focus_time,
+        'workload_summary': workload_summary
     }), 200
 
 
@@ -1110,6 +1083,57 @@ def api_get_changes():
         'count': len(changes),
         'changes': [c.to_dict() for c in changes]
     }), 200
+
+
+# -------------------------------------------------------------------
+# 11. "Next Up" Top 5 Priority Tasks API (GET /api/tasks/next-up)
+# -------------------------------------------------------------------
+
+@api_bp.route('/tasks/next-up', methods=['GET'])
+def api_get_next_up():
+    """
+    Returns the top 5 highest-scoring non-done tasks for the currently authenticated user
+    (or filtered by ?user_id=<id>).
+    
+    Uses the priority scoring formula:
+    priority weight + importance weight + days until due + overdue bonus.
+    """
+    target_user_id = request.args.get('user_id', type=int)
+    if not target_user_id and current_user and current_user.is_authenticated:
+        target_user_id = current_user.id
+
+    all_tasks = Task.query.all()
+
+    if target_user_id:
+        # Prioritize non-done tasks directly assigned to this user
+        user_tasks = [t for t in all_tasks if t.assigned_to == target_user_id and t.status != 'done']
+        user_tasks.sort(key=lambda t: t.score, reverse=True)
+        top_tasks = user_tasks[:5]
+
+        # Supplement with high-scoring active tasks if fewer than 5
+        if len(top_tasks) < 5:
+            supplements = [t for t in all_tasks if t.status != 'done' and t not in top_tasks]
+            supplements.sort(key=lambda t: t.score, reverse=True)
+            top_tasks.extend(supplements[:(5 - len(top_tasks))])
+    else:
+        top_tasks = [t for t in all_tasks if t.status != 'done']
+        top_tasks.sort(key=lambda t: t.score, reverse=True)
+        top_tasks = top_tasks[:5]
+
+    user_name = "You"
+    if target_user_id:
+        target_user = User.query.get(target_user_id)
+        if target_user:
+            user_name = target_user.name
+
+    return jsonify({
+        'success': True,
+        'user_id': target_user_id,
+        'user_name': user_name,
+        'count': len(top_tasks),
+        'tasks': [t.to_dict() for t in top_tasks]
+    }), 200
+
 
 
 

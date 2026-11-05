@@ -5106,5 +5106,501 @@ a:hover {
     animation: liveCardPulse 2s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
 }
 
+/* ===================================================================
+   Task Priority Scoring & Score Badges
+   =================================================================== */
+.badge-score {
+    background: rgba(99, 102, 241, 0.12);
+    color: #4f46e5;
+    border: 1px solid rgba(99, 102, 241, 0.28);
+    font-weight: 700;
+    font-size: 0.72rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 9999px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    transition: all 0.2s ease;
+}
+
+.badge-score:hover {
+    transform: scale(1.05);
+    background: rgba(99, 102, 241, 0.2);
+}
+
+[data-theme="dark"] .badge-score {
+    background: rgba(99, 102, 241, 0.24);
+    color: #a5b4fc;
+    border-color: rgba(99, 102, 241, 0.45);
+}
+
+/* ===================================================================
+   Team Workload Reassignment Suggestion Alert Banner
+   =================================================================== */
+.workload-alert-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.85rem 1.25rem;
+    margin-bottom: 1.25rem;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(239, 68, 68, 0.08) 100%);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-left: 4px solid #f59e0b;
+    border-radius: 12px;
+    animation: fadeInDown 0.35s ease;
+}
+
+.workload-alert-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.workload-alert-icon {
+    font-size: 1.4rem;
+    flex-shrink: 0;
+}
+
+.workload-alert-text {
+    font-size: 0.875rem;
+    color: var(--text-color);
+    line-height: 1.45;
+}
+
+.workload-alert-text strong {
+    color: #b45309;
+    margin-right: 0.25rem;
+}
+
+[data-theme="dark"] .workload-alert-banner {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(239, 68, 68, 0.12) 100%);
+    border-color: rgba(245, 158, 11, 0.45);
+    border-left-color: #fbbf24;
+}
+
+[data-theme="dark"] .workload-alert-text strong {
+    color: #fbbf24;
+}
+
+/* ===================================================================
+   "Next Up" Top 5 Priority Panel
+   =================================================================== */
+.next-up-card {
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.25rem;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.25s ease;
+}
+
+.next-up-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: rgba(99, 102, 241, 0.3);
+}
+
+.next-up-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.85rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.next-up-title-area {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.next-up-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: #ffffff;
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.35rem 0.75rem;
+    border-radius: 9999px;
+    box-shadow: 0 2px 6px rgba(99, 102, 241, 0.35);
+}
+
+.next-up-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-color);
+    margin: 0;
+}
+
+.next-up-subtitle {
+    font-size: 0.78rem;
+    margin: 0.15rem 0 0 0;
+    color: var(--text-muted);
+}
+
+.formula-code {
+    background: rgba(99, 102, 241, 0.08);
+    color: #6366f1;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.75rem;
+}
+
+[data-theme="dark"] .formula-code {
+    background: rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
+}
+
+.next-up-meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
+    border-radius: 9999px;
+    background: var(--surface-bg-alt);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+}
+
+.next-up-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.next-up-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--surface-bg-alt);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.next-up-row:hover {
+    transform: translateX(4px);
+    border-color: rgba(99, 102, 241, 0.4);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="dark"] .next-up-row:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* Rank Number Badges (#1 Gold, #2 Silver, #3 Bronze) */
+.next-up-rank {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.rank-number {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 800;
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+}
+
+.rank-1 .rank-number {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 2px 6px rgba(245, 158, 11, 0.4);
+}
+
+.rank-2 .rank-number {
+    background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 2px 6px rgba(100, 116, 139, 0.3);
+}
+
+.rank-3 .rank-number {
+    background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 2px 6px rgba(180, 83, 9, 0.3);
+}
+
+.next-up-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.next-up-badges-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.next-up-title-row {
+    margin: 0.1rem 0;
+}
+
+.next-up-task-link {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-color);
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.next-up-task-link:hover {
+    color: #6366f1;
+}
+
+.next-up-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.next-up-actions {
+    flex-shrink: 0;
+}
+
+.btn-next-up-focus {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 0.4rem 0.85rem;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(245, 158, 11, 0.3);
+    transition: all 0.2s ease;
+}
+
+.btn-next-up-focus:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(245, 158, 11, 0.45);
+}
+
+.next-up-empty-state {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--text-muted);
+}
+
+.next-up-empty-state .empty-icon {
+    font-size: 2rem;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+/* ===================================================================
+   Workload View (Progress Bars, Overload Flags, Reassignment Box)
+   =================================================================== */
+.workload-kpi-pills {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.workload-suggestions-container {
+    margin-bottom: 1.25rem;
+}
+
+.workload-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.85rem 1.15rem;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    margin: 0;
+}
+
+.workload-alert .alert-icon {
+    font-size: 1.3rem;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+}
+
+.workload-alert .alert-content {
+    flex: 1;
+}
+
+.suggestion-list {
+    margin: 0.4rem 0 0 0;
+    padding-left: 1.25rem;
+    font-size: 0.85rem;
+    line-height: 1.55;
+}
+
+.suggestion-list li {
+    margin-bottom: 0.3rem;
+}
+
+.col-workload-bar {
+    min-width: 140px;
+    vertical-align: middle;
+}
+
+.workload-bar-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.workload-bar-track {
+    flex: 1;
+    height: 9px;
+    border-radius: 9999px;
+    background: var(--surface-bg-alt);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    position: relative;
+}
+
+.workload-bar-fill {
+    height: 100%;
+    border-radius: 9999px;
+    transition: width 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bar-fill-normal {
+    background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%);
+}
+
+.bar-fill-overloaded {
+    background: linear-gradient(90deg, #f59e0b 0%, #ef4444 100%);
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.workload-bar-num {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    min-width: 50px;
+}
+
+/* Overload and Capacity Badges */
+.badge-overloaded {
+    background: rgba(239, 68, 68, 0.14);
+    color: #dc2626;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    font-weight: 700;
+    padding: 0.25rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    animation: pulseWarning 2s infinite ease-in-out;
+}
+
+[data-theme="dark"] .badge-overloaded {
+    background: rgba(239, 68, 68, 0.25);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+@keyframes pulseWarning {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+    }
+    50% {
+        opacity: 0.85;
+        box-shadow: 0 0 0 4px rgba(239, 68, 68, 0);
+    }
+}
+
+.badge-capacity {
+    background: rgba(16, 185, 129, 0.12);
+    color: #059669;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    font-weight: 600;
+    padding: 0.25rem 0.55rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+}
+
+[data-theme="dark"] .badge-capacity {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, 0.4);
+}
+
+.badge-balanced {
+    background: rgba(59, 130, 246, 0.12);
+    color: #2563eb;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    font-weight: 600;
+    padding: 0.25rem 0.55rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+}
+
+[data-theme="dark"] .badge-balanced {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.4);
+}
+
+.badge-available {
+    background: rgba(107, 114, 128, 0.12);
+    color: #4b5563;
+    border: 1px solid rgba(107, 114, 128, 0.3);
+    font-weight: 600;
+    padding: 0.25rem 0.55rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+}
+
+[data-theme="dark"] .badge-available {
+    background: rgba(107, 114, 128, 0.2);
+    color: #9ca3af;
+    border-color: rgba(107, 114, 128, 0.4);
+}
+
+.row-overloaded {
+    background-color: rgba(239, 68, 68, 0.04);
+}
+
+[data-theme="dark"] .row-overloaded {
+    background-color: rgba(239, 68, 68, 0.08);
+}
+
+.avatar-overloaded {
+    box-shadow: 0 0 0 2px #ef4444;
+}
+
+.ratio-label {
+    margin-left: 0.25rem;
+    font-size: 0.75rem;
+}
+
+
 
 

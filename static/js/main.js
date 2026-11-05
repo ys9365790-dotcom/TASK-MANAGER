@@ -2216,6 +2216,9 @@ function initLiveBoardSync() {
 
                 if (metricsNeedUpdate && typeof updateColumnMetrics === 'function') {
                     updateColumnMetrics();
+                    if (typeof refreshNextUpPanel === 'function') {
+                        refreshNextUpPanel();
+                    }
                 }
             }
         } catch (err) {
@@ -2227,6 +2230,93 @@ function initLiveBoardSync() {
 
     // Start 3-second polling interval (no websockets, lightweight HTTP)
     setInterval(pollChanges, 3000);
+}
+
+
+/**
+ * Refreshes the "Next up" top 5 priority tasks panel for the logged-in user.
+ */
+async function refreshNextUpPanel() {
+    const listEl = document.getElementById('next-up-list');
+    if (!listEl) return;
+
+    try {
+        const response = await fetch('/api/tasks/next-up', {
+            headers: { 'Accept': 'application/json' }
+        });
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (!data.success || !Array.isArray(data.tasks)) return;
+
+        if (data.tasks.length === 0) {
+            listEl.innerHTML = `
+                <div class="next-up-empty-state">
+                    <span class="empty-icon">🎉</span>
+                    <p>No active tasks in your queue! You're completely caught up, or create a new task above.</p>
+                </div>
+            `;
+            return;
+        }
+
+        listEl.innerHTML = data.tasks.map((task, idx) => {
+            const rank = idx + 1;
+            const prioCap = task.priority ? (task.priority.charAt(0).toUpperCase() + task.priority.slice(1)) : 'Medium';
+            const impBadge = task.important ? `<span class="badge badge-important badge-sm">⭐ Important</span>` : '';
+            const urgencyBadge = task.is_overdue
+                ? `<span class="badge badge-urgency badge-overdue badge-sm">⏰ Overdue</span>`
+                : (task.is_due_soon ? `<span class="badge badge-urgency badge-due-soon badge-sm">⏳ Due &lt;48h</span>` : '');
+            const scoreVal = task.score !== undefined ? task.score : 0;
+            const breakdown = task.score_breakdown || {};
+            const scoreBadge = `<span class="badge badge-score badge-sm" title="Score: ${scoreVal} pts (Prio: ${breakdown.priority_weight || 0} + Imp: ${breakdown.importance_weight || 0} + Due: ${breakdown.due_date_weight || 0} + Overdue: ${breakdown.overdue_bonus || 0})">🎯 ${scoreVal} pts</span>`;
+            const statusBadge = `<span class="badge badge-status badge-${task.status} badge-sm">${task.status ? task.status.charAt(0).toUpperCase() + task.status.slice(1) : ''}</span>`;
+
+            let dueText = '<span class="text-muted">📅 No due date</span>';
+            if (task.due_date) {
+                const dueClass = task.is_overdue ? 'text-danger' : (task.is_due_soon ? 'text-warning' : '');
+                dueText = `<span class="next-up-meta-due ${dueClass}">📅 Due ${task.due_date}</span>`;
+            }
+            const assigneeText = task.assignee_name ? `<span class="next-up-meta-assignee">👤 ${escapeHtml(task.assignee_name)}</span>` : '';
+            const focusText = (task.total_focus_minutes > 0) ? `<span class="next-up-meta-time">⏱️ ${task.formatted_focus_time} focused</span>` : '';
+
+            return `
+                <div class="next-up-row rank-${rank}" data-task-id="${task.id}">
+                    <div class="next-up-rank" title="Rank #${rank}">
+                        <span class="rank-number">#${rank}</span>
+                    </div>
+                    <div class="next-up-content">
+                        <div class="next-up-badges-row">
+                            <span class="badge badge-priority badge-${task.priority} badge-sm">
+                                <span class="priority-dot priority-dot-${task.priority}"></span>
+                                ${prioCap}
+                            </span>
+                            ${impBadge}
+                            ${urgencyBadge}
+                            ${scoreBadge}
+                            ${statusBadge}
+                        </div>
+                        <div class="next-up-title-row">
+                            <a href="/tasks/${task.id}/edit" class="next-up-task-link" title="${escapeHtml(task.title)}">
+                                ${escapeHtml(task.title)}
+                            </a>
+                        </div>
+                        <div class="next-up-meta-row">
+                            ${dueText}
+                            ${assigneeText}
+                            ${focusText}
+                        </div>
+                    </div>
+                    <div class="next-up-actions">
+                        <button type="button" class="btn btn-sm btn-start-focus btn-next-up-focus" data-task-id="${task.id}" data-task-title="${escapeHtml(task.title)}" title="Start 25-minute Pomodoro focus session">
+                            ⏱️ Start Focus
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (err) {
+        console.warn('Next-up panel refresh error:', err);
+    }
 }
 
 
