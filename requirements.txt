@@ -7,3 +7,4 @@ Flask-SQLAlchemy>=3.1.0 # SQLAlchemy integration for Flask to manage SQLite data
 Flask-Login>=0.6.3    # User session management, login, logout, and protected routes
 Werkzeug>=3.0.0       # WSGI utility library, used here for secure password hashing
 python-dotenv>=1.0.0  # Loads environment variables from a .env file (optional)
+gunicorn>=21.2.0      # Production WSGI HTTP server for Render/Linux deployment
